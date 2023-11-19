@@ -1,3 +1,35 @@
+# Editing tools and IDEs # 
+##########################
+.idea
+.vscode
+*.swp
+
+# Compiled source #
+###################
+*.class
+*.dll
+*.exe
+*.o
+*.so
+*.pyc
+.pytest_cache
+.mypy_cache
+
+# Logs and databases #
+######################
+*.log
+*.sqlite
+*.db
+
+# Other non-source files #
+####################
+*.zip
+*.gz
+*.tar
+*.tar.gz
+*.7z
+*.pdf
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
