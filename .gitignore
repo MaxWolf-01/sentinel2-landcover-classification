@@ -1,4 +1,7 @@
-# Editing tools and IDEs # 
+/weights
+/data
+
+# Editing tools and IDEs #
 ##########################
 .idea
 .vscode
