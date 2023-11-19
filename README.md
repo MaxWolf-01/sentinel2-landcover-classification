@@ -7,6 +7,16 @@ cd sentinel2-landcover-classification
 git submodule update --init --recursive
 ```
 
+### Prithvi Foundation Model
+
+```bash
+make setup_prithvi_env
+mamba activate prithvi
+make setup_prithvi_env2
+```
+
+See [Prithvi Foundation Model README](src/models/hls-foundation-os/README.md) for more data and finetuning instructions.
+
 ## Citations
 
 ```bibtex
