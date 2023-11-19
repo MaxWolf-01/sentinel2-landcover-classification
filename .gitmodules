@@ -1,0 +1,3 @@
+[submodule "src/models/hls-foundation-os"]
+	path = src/models/hls-foundation-os
+	url = git@github.com:MaxWolf-01/hls-foundation-os.git
