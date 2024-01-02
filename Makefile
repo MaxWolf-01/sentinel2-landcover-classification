@@ -5,11 +5,11 @@ setup_prithvi_env:
 	echo "Activate the env with '$(ENV_MANAGER) activate prithvi' -> continue with \`make setup_prithvi_env2\`";
 
 setup_prithvi_env2:
-	pip install --no-input torch==1.11.0+cu115 torchvision==0.12.0+cu115 --extra-index-url https://download.pytorch.org/whl/cu115;  \
+	pip install --no-input torch torchvision torchaudio;  \
 	cd src/models/hls-foundation-os; \
 	pip insatll -e .; \
 	pip install -U openmim; \
-	mim install mmcv-full==1.6.2 -f https://download.openmmlab.com/mmcv/dist/cu115/torch1.11.0/index.html; \
+	mim install mmcv-full==1.7.1 -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.1/index.html; \
 	pip install -r requirements.txt;
 
 help:  ## Show help
