@@ -3,3 +3,7 @@ torchvision
 timm
 einops
 rasterio
+sentinelhub
+prithvi
+overpy
+numpy

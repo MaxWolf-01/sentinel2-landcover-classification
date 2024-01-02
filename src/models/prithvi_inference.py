@@ -62,7 +62,6 @@ def process_channel_group(orig_img, new_img, channels, data_mean, data_std):
 
     return stack_orig, stack_rec
 
-
 def read_geotiff(file_path: str):
     """ Read all bands from *file_path* and return image + meta info.
     Args:
@@ -99,7 +98,6 @@ def _convert_np_uint8(float_image: torch.Tensor):
     image = image.astype(dtype=np.uint8)
 
     return image
-
 
 def load_example(file_paths: List[str], mean: List[float], std: List[float]):
     """ Build an input example by loading images in *file_paths*.
