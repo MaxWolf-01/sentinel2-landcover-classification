@@ -11,10 +11,16 @@ pre-commit install
 
 ### Prithvi Foundation Model
 
+Setup the environment:
 ```bash
 make setup_prithvi_env
 mamba activate prithvi
 make setup_prithvi_env2
+```
+
+Download the model:
+```bash
+curl -L "https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M/resolve/main/Prithvi_100M.pt?download=true" -o "weights/Prithvi_100M.pt"
 ```
 
 See [Prithvi Foundation Model README](src/models/hls-foundation-os/README.md) for more data and finetuning instructions.
@@ -29,5 +35,16 @@ See [Prithvi Foundation Model README](src/models/hls-foundation-os/README.md) fo
     title           = {{HLS Foundation}},
     repository-code = {https://github.com/nasa-impact/hls-foundation-os},
     year            = {2023}
+}
+```
+
+```bibtex
+@misc {ibm_nasa_geospatial_2023,
+	author       = { {IBM NASA Geospatial} },
+	title        = { Prithvi-100M (Revision 489bb56) },
+	year         = 2023,
+	url          = { https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M },
+	doi          = { 10.57967/hf/0952 },
+	publisher    = { Hugging Face }
 }
 ```

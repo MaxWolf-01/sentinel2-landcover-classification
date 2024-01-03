@@ -2,6 +2,9 @@
 *.ckpt
 *.json
 
+/weights
+/data
+
 # Editing tools and IDEs #
 ##########################
 .idea

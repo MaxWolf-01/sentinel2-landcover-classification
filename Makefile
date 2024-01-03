@@ -9,7 +9,8 @@ setup_prithvi_env2:
 	cd src/models/hls-foundation-os; \
 	pip insatll -e .; \
 	pip install -U openmim; \
-	mim install mmcv-full==1.6.2 -f https://download.openmmlab.com/mmcv/dist/cu115/torch1.11.0/index.html;
+	mim install mmcv-full==1.6.2 -f https://download.openmmlab.com/mmcv/dist/cu115/torch1.11.0/index.html; \
+	pip install -r requirements.txt;
 
 help:  ## Show help
 	@grep -E '^[.a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
