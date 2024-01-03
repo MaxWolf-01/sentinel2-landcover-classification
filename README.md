@@ -5,6 +5,8 @@
 git clone --recurse-submodules git@github.com:MaxWolf-01/sentinel2-landcover-classification.git
 cd sentinel2-landcover-classification
 git submodule update --init --recursive
+pip install pre-commit
+pre-commit install
 ```
 
 ### Prithvi Foundation Model
