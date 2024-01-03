@@ -1,3 +1,7 @@
+*.pt
+*.ckpt
+*.json
+
 /weights
 /data
 
