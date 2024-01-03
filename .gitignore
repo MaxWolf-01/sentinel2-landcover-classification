@@ -1,4 +1,8 @@
-# Editing tools and IDEs # 
+*.pt
+*.ckpt
+*.json
+
+# Editing tools and IDEs #
 ##########################
 .idea
 .vscode
