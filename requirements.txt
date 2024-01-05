@@ -7,3 +7,5 @@ sentinelhub
 prithvi
 overpy
 numpy
+osmnx
+geopandas
