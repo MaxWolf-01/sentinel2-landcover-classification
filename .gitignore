@@ -4,6 +4,10 @@
 
 /weights
 /data
+/out
+
+# osmx
+**/cache/
 
 # Editing tools and IDEs #
 ##########################
