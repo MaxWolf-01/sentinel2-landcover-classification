@@ -11,6 +11,7 @@ from lightning.pytorch.loggers import WandbLogger
 
 from torch import nn
 
+from src.data.s2osmdatamodule import S2OSMDatamodule
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 
 Mode = Literal["train", "val", "test"]
@@ -183,7 +184,7 @@ def train() -> None:
 
     model: PrithviSegmentationFineTuner = PrithviSegmentationFineTuner(config)
 
-    datamodule: pl.LightningDataModule = ...
+    datamodule: S2OSMDatamodule = ...
 
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(monitor="val/loss", mode="min", save_top_k=1, save_last=True, every_n_epochs=1),

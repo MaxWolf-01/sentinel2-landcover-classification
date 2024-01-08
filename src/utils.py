@@ -1,5 +1,7 @@
+import logging
 import string
 import random
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -35,3 +37,30 @@ def get_run_name(project_name: str, prefix: str | None = None) -> str:
     if prefix is not None:
         return f"{project_name}_{prefix}_{short_uuid}"
     return f"{project_name}_{short_uuid}"
+
+
+def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
+    log_directory = Path(__file__).parent.parent / "logs" / "system"
+    log_directory.mkdir(parents=True, exist_ok=True)
+
+    log_filename = f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log'
+    log_filepath = log_directory / log_filename
+
+    file_logging_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    console_logging_format = file_logging_format
+
+    file_handler = logging.FileHandler(log_filepath)
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter(file_logging_format))
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(logging.Formatter(console_logging_format))
+
+    logger = logging.getLogger(name)
+    if not logger.handlers:  # Check if handlers already exist for this logger
+        logger.setLevel(log_level)
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+    return logger
