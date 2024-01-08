@@ -1,6 +1,7 @@
 *.pt
 *.ckpt
 *.json
+*.npy
 
 /weights
 /data
