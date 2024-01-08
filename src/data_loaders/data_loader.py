@@ -1,7 +1,6 @@
 import json
 
 import osmnx as ox
-import geopandas as gpd
 import pandas as pd
 import rasterio
 from rasterio.features import rasterize
@@ -30,20 +29,20 @@ class DataProvider:
         gdf_list = []
         for feature, tags in self.feature_tags.items():
             gdf = self._fetch_osm_data_by_tags(tags)
-            gdf['class'] = feature
+            gdf["class"] = feature
             gdf_list.append(gdf)
 
         self.gdf = self.standardize_osm_tags(self.gdf, self.tag_mapping)
         self.gdf = pd.concat(gdf_list, ignore_index=True)
-        self.gdf = self.gdf.dropna(subset=['geometry'])
+        self.gdf = self.gdf.dropna(subset=["geometry"])
 
     def load_tag_mapping(self, file_path):
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             self.tag_mapping = json.load(file)
 
     def standardize_osm_tags(self, gdf, tag_mapping):
         for variant, standard in tag_mapping.items():
-            gdf.loc[gdf['key'] == variant, 'key'] = standard
+            gdf.loc[gdf["key"] == variant, "key"] = standard
         return gdf
 
     def _fetch_osm_data_by_tags(self, tags):
@@ -75,7 +74,7 @@ class DataProvider:
             crs=self.gdf.crs,
             transform=transform,
         ) as dst:
-            shapes = ((geom, value) for geom, value in zip(self.gdf.geometry, self.gdf['class']))
+            shapes = ((geom, value) for geom, value in zip(self.gdf.geometry, self.gdf["class"]))
             burned = rasterize(shapes=shapes, out_shape=(tile_height, tile_width), transform=transform, fill=0)
             dst.write_band(1, burned)
 

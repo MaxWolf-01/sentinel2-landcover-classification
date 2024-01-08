@@ -2,26 +2,26 @@
 ## Setup
 
 ```bash
-git clone --recurse-submodules git@github.com:MaxWolf-01/sentinel2-landcover-classification.git
+git clone git@github.com:MaxWolf-01/sentinel2-landcover-classification.git
 cd sentinel2-landcover-classification
-git submodule update --init --recursive
+conda create -n s2lc python="3.10"
+conda activate s2lc
+pip install -r requirements.txt
 ```
 
-### Prithvi Foundation Model
-
-Setup the environment:
-```bash
-make setup_prithvi_env
-mamba activate prithvi
-make setup_prithvi_env2
-```
-
-Download the model:
+Download the pretrained weights of the Prithvi foundation model from Hugging Face:
 ```bash
 curl -L "https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M/resolve/main/Prithvi_100M.pt?download=true" -o "weights/Prithvi_100M.pt"
 ```
 
-See [Prithvi Foundation Model README](src/models/hls-foundation-os/README.md) for more data and finetuning instructions.
+### Developer Infos
+
+Before commiting, make sure to 
+```bash
+pip install pre-commit
+pre-commit install
+```
+Or run `pre-commit run --all-files` to check manually.
 
 ## Citations
 
