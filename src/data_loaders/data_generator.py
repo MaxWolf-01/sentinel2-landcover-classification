@@ -106,7 +106,7 @@ class DataGenerator:
         for idx, segment in enumerate(segments):
             self.fetch_and_store_sentinel_data(segment, time_interval, bands, resolution, idx)
             self.fetch_data(segment)
-            self.rasterize_data(os.path.join("data/osm/", f"osm_data_{idx}.tif"), *resolution)
+            self.rasterize_data(os.path.join("../data/osm/", f"osm_data_{idx}.tif"), *resolution)
 
     def fetch_and_store_sentinel_data(self, segment_bbox, time_interval, bands, resolution, idx):
         request = self.create_request(segment_bbox, time_interval, bands, resolution)
@@ -115,7 +115,7 @@ class DataGenerator:
         # Assuming data has shape (1, Height, Width, Channels), reshape to (Channels, 1, Height, Width)
         reshaped_data = data[0].transpose(2, 0, 1)
 
-        output_path = os.path.join("data/sentinel/", f"sentinel_data_{idx}.tif")
+        output_path = os.path.join("../data/sentinel/", f"sentinel_data_{idx}.tif")
 
         with rasterio.open(
                 output_path,
@@ -143,7 +143,7 @@ class DataGenerator:
             bbox=bbox,
             size=resolution,
             config=self.config,
-            data_folder="data/sentinel/"
+            data_folder="../data/sentinel/"
         )
 
     def fetch_data(self, segment):
