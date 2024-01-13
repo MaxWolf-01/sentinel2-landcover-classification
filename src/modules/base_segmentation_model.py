@@ -35,7 +35,6 @@ class Norm2d(nn.Module):
 class ConvTransformerTokensToEmbeddingNeck(nn.Module):
     """Neck that transforms the token-based output of transformer into a single embedding suitable for processing with
     standard layers. Performs 4 ConvTranspose2d operations on the rearranged input with kernel_size=2 and stride=2
-    todo this could be refactored some more (einops, sequential, more general, ...) & tested
     """
 
     def __init__(
@@ -69,67 +68,39 @@ class ConvTransformerTokensToEmbeddingNeck(nn.Module):
         dilation = 1
         padding = 0
         output_padding = 0
-        for _ in range(4):
+        num_upscales = 4
+        for _ in range(num_upscales):
             self.H_out = _conv_transpos2d_output(self.H_out, stride, padding, dilation, kernel_size, output_padding)
             self.W_out = _conv_transpos2d_output(self.W_out, stride, padding, dilation, kernel_size, output_padding)
 
         self.embed_dim = embed_dim
         self.output_embed_dim = output_embed_dim
-        self.fpn1 = nn.Sequential(
-            nn.ConvTranspose2d(
-                self.embed_dim,
-                self.output_embed_dim,
-                kernel_size=kernel_size,
-                stride=stride,
-                dilation=dilation,
-                padding=padding,
-                output_padding=output_padding,
-            ),
-            Norm2d(self.output_embed_dim),
-            nn.GELU(),
-            nn.ConvTranspose2d(
-                self.output_embed_dim,
-                self.output_embed_dim,
-                kernel_size=kernel_size,
-                stride=stride,
-                dilation=dilation,
-                padding=padding,
-                output_padding=output_padding,
-            ),
+        conv_t2d = lambda inp, out: nn.ConvTranspose2d(  # noqa: E731
+            inp,
+            out,
+            kernel_size=kernel_size,
+            stride=stride,
+            dilation=dilation,
+            padding=padding,
+            output_padding=output_padding,
         )
-        self.fpn2 = nn.Sequential(
-            nn.ConvTranspose2d(
-                self.output_embed_dim,
-                self.output_embed_dim,
-                kernel_size=kernel_size,
-                stride=stride,
-                dilation=dilation,
-                padding=padding,
-                output_padding=output_padding,
-            ),
+
+        self.feature_pyramid_net = nn.Sequential(
+            conv_t2d(self.embed_dim, self.output_embed_dim),
             Norm2d(self.output_embed_dim),
             nn.GELU(),
-            nn.ConvTranspose2d(
-                self.output_embed_dim,
-                self.output_embed_dim,
-                kernel_size=kernel_size,
-                stride=stride,
-                dilation=dilation,
-                padding=padding,
-                output_padding=output_padding,
-            ),
+            conv_t2d(self.output_embed_dim, self.output_embed_dim),  # fixme: no norm act correct?
+            conv_t2d(self.output_embed_dim, self.output_embed_dim),
+            Norm2d(self.output_embed_dim),
+            nn.GELU(),
+            conv_t2d(self.output_embed_dim, self.output_embed_dim),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.drop_cls_token:
             x = x[:, 1:, :]
-        x = x.permute(0, 2, 1).reshape(x.shape[0], -1, self.Hp, self.Wp)
-
-        x = self.fpn1(x)
-        x = self.fpn2(x)
-
-        x = x.reshape((-1, self.output_embed_dim, self.H_out, self.W_out))
-
+        x = einops.rearrange(x, "b (h w) emb -> b emb h w", h=self.Hp, w=self.Wp)
+        x = self.feature_pyramid_net(x)
         return x
 
 
@@ -149,9 +120,11 @@ class FCNHead(nn.Module):
         dropout_ratio: float = 0.1,
     ) -> None:
         super().__init__()
-        self.convs = nn.Sequential(
+        self.net = nn.Sequential(
             *[
-                nn.Sequential(
+                layer
+                for i in range(num_convs)
+                for layer in [
                     nn.Conv2d(
                         in_channels=in_channels if i == 0 else out_channels,
                         out_channels=out_channels,
@@ -160,16 +133,14 @@ class FCNHead(nn.Module):
                     ),
                     nn.BatchNorm2d(out_channels),
                     nn.ReLU(inplace=True),
-                )
-                for i in range(num_convs)
+                ]
             ],
             nn.Dropout2d(dropout_ratio),
             nn.Conv2d(out_channels, num_classes, kernel_size=1),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.convs(x)
-        return x
+        return self.net(x)
 
 
 class PrithviSegmentationModel(nn.Module):
@@ -185,8 +156,8 @@ class PrithviSegmentationModel(nn.Module):
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
-    def forward(self, x):
-        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
 
         neck_output = self.neck(features)
 
