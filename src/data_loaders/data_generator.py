@@ -11,7 +11,7 @@ from sklearn.preprocessing import LabelEncoder
 
 
 def _create_evalscript(bands):
-    bands_str = ', '.join([f'"{band}"' for band in bands])
+    bands_str = ", ".join([f'"{band}"' for band in bands])
     return f"""
     //VERSION=3
     function setup() {{
@@ -70,9 +70,9 @@ def calculate_segments(min_lon, min_lat, max_lon, max_lat, segment_size_km):
 
 
 def standardize_osm_tags(gdf, tag_mapping):
- #   for variant, standard in tag_mapping.items():
-  #      gdf.loc[gdf['key'] == variant, 'key'] = standard
- #TODO: Handle tag-mapping
+    #   for variant, standard in tag_mapping.items():
+    #      gdf.loc[gdf['key'] == variant, 'key'] = standard
+    # TODO: Handle tag-mapping
     return gdf
 
 
@@ -80,12 +80,12 @@ class DataGenerator:
     def __init__(self, config):
         self.bounds = None
         self.feature_tags = {
-            'building': ['yes', 'residential', 'commercial', 'industrial'],
-            'highway': ['primary', 'secondary', 'tertiary', 'residential'],
-            'landuse': ['residential', 'commercial', 'industrial', 'park'],
-            'natural': ['water', 'wood', 'grassland'],
-            'amenity': ['school', 'hospital', 'parking', 'restaurant']
-}
+            "building": ["yes", "residential", "commercial", "industrial"],
+            "highway": ["primary", "secondary", "tertiary", "residential"],
+            "landuse": ["residential", "commercial", "industrial", "park"],
+            "natural": ["water", "wood", "grassland"],
+            "amenity": ["school", "hospital", "parking", "restaurant"],
+        }
 
         self.gdf = None
         self.tag_mapping = {}
@@ -98,7 +98,7 @@ class DataGenerator:
         self.feature_tags = feature_tags
 
     def load_tag_mapping(self, file_path):
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             self.tag_mapping = json.load(file)
 
     def fetch_and_store_data(self, aoi_bbox, time_interval, bands, resolution, segment_size_km=25):
@@ -118,15 +118,15 @@ class DataGenerator:
         output_path = os.path.join("../data/sentinel/", f"sentinel_data_{idx}.tif")
 
         with rasterio.open(
-                output_path,
-                'w',
-                driver='GTiff',
-                height=resolution[0],
-                width=resolution[1],
-                count=len(bands),
-                dtype=reshaped_data.dtype,
-                crs='+proj=latlong',
-                transform=rasterio.transform.from_origin(*segment_bbox[:2], resolution[0], resolution[1])
+            output_path,
+            "w",
+            driver="GTiff",
+            height=resolution[0],
+            width=resolution[1],
+            count=len(bands),
+            dtype=reshaped_data.dtype,
+            crs="+proj=latlong",
+            transform=rasterio.transform.from_origin(*segment_bbox[:2], resolution[0], resolution[1]),
         ) as dst:
             for i in range(len(bands)):
                 # Write each band separately
@@ -137,26 +137,26 @@ class DataGenerator:
         bbox = BBox(bbox=aoi_bbox, crs=CRS.WGS84)
         return SentinelHubRequest(
             evalscript=evalscript,
-            input_data=[SentinelHubRequest.input_data(data_collection=DataCollection.SENTINEL2_L1C,
-                                                      time_interval=time_interval)],
-            responses=[SentinelHubRequest.output_response('default', MimeType.TIFF)],
+            input_data=[
+                SentinelHubRequest.input_data(data_collection=DataCollection.SENTINEL2_L1C, time_interval=time_interval)
+            ],
+            responses=[SentinelHubRequest.output_response("default", MimeType.TIFF)],
             bbox=bbox,
             size=resolution,
             config=self.config,
-            data_folder="../data/sentinel/"
+            data_folder="../data/sentinel/",
         )
 
     def fetch_data(self, segment):
-
         gdf_list = []
         for feature, tags in self.feature_tags.items():
-            tags_dict = {feature: tags} #TODO: Improve code efficiency
+            tags_dict = {feature: tags}  # TODO: Improve code efficiency
             gdf = fetch_osm_data_by_tags(class_label=feature, segment=segment, tags=tags_dict)
             gdf_list.append(gdf)
 
         self.gdf = pd.concat(gdf_list, ignore_index=True)
         self.gdf = standardize_osm_tags(self.gdf, self.tag_mapping)
-        self.gdf = self.gdf.dropna(subset=['geometry'])
+        self.gdf = self.gdf.dropna(subset=["geometry"])
 
     def rasterize_data(self, output_path, tile_width, tile_height):
         if self.gdf is None:
@@ -169,7 +169,9 @@ class DataGenerator:
         transform = from_origin(minx, maxy, pixel_size_x, pixel_size_y)
 
         label_encoder = LabelEncoder()
-        self.gdf['class_encoded'] = label_encoder.fit_transform(self.gdf['class'])
+        self.gdf["class_encoded"] = label_encoder.fit_transform(
+            self.gdf["class"]
+        )  # FIXME why call this here, repeatedly?
 
         with rasterio.open(
             output_path,
@@ -182,11 +184,11 @@ class DataGenerator:
             crs=self.gdf.crs,
             transform=transform,
         ) as dst:
-            shapes = ((geom, value) for geom, value in zip(self.gdf.geometry, self.gdf['class_encoded']))
+            shapes = ((geom, value) for geom, value in zip(self.gdf.geometry, self.gdf["class_encoded"]))
             burned = rasterize(shapes=shapes, out_shape=(tile_height, tile_width), transform=transform, fill=0)
             dst.write_band(1, burned)
 
-    def get_data_frame(self):
+    def get_data_frame(self):  # FIXME never used
         if self.gdf is None:
             raise ValueError("GeoDataFrame is empty. Fetch data first.")
         return self.gdf
@@ -194,18 +196,16 @@ class DataGenerator:
     def main(self):
         # Initialize Sentinel Hub configuration
         config = SHConfig(
-            sh_client_id="6a27779e-becf-49f4-8c28-27f5fdabb0dc",
-            sh_client_secret="dSc8LwCGLEFNfb15dGqheAQM9v2HyMfF"
-    )
+            sh_client_id="6a27779e-becf-49f4-8c28-27f5fdabb0dc", sh_client_secret="dSc8LwCGLEFNfb15dGqheAQM9v2HyMfF"
+        )
 
         # Set the bounds for Vienna (approximate)
         vienna_bounds = (15.117188, 47.739323, 16.567383, 48.341646)
 
         # Set the time interval for Sentinel-2 data
-        time_interval = ('2023-07-01', '2023-07-15')  # Example time interval
+        time_interval = ("2023-07-01", "2023-07-15")  # Example time interval
 
-        # Specify the Sentinel-2 bands of interest
-        bands = ['B04', 'B03', 'B02']  # Example bands (Red, Green, Blue)
+        bands = ("B02", "B03", "B04", "B05", "B06", "B07")  # Prithvi Bands
 
         # Specify the resolution
         resolution = (512, 512)  # Width and Height in pixels
@@ -214,23 +214,18 @@ class DataGenerator:
         data_generator = DataGenerator(config)
 
         # Load tag mapping from a JSON file (you need to create this file based on your requirements)
-        data_generator.load_tag_mapping('tag_mapping.json')
+        data_generator.load_tag_mapping("tag_mapping.json")
 
         # Set feature tags for OSM data (you need to define these based on your requirements)
-        self.feature_tags = {
-                    'building': 'yes',
-                    'highway': ['primary', 'secondary']
-                }
+        self.feature_tags = {"building": "yes", "highway": ["primary", "secondary"]}
 
         # Fetch and store data for Vienna
         data_generator.fetch_and_store_data(vienna_bounds, time_interval, bands, resolution)
 
+
 if __name__ == "__main__":
     # Initialize Sentinel Hub configuration
-    config = SHConfig(
-        sh_client_id=os.getenv('SH_CLIENT_ID'),
-    sh_client_secret = os.getenv('SH_CLIENT_SECRET')
-    )
+    config = SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
 
     # Create an instance of the DataGenerator class with the configuration
     data_generator = DataGenerator(config)
