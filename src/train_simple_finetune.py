@@ -82,6 +82,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
 
+        # TODO mIoU
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             # "train": {
             #     "accuracy": torchmetrics.Accuracy(),
