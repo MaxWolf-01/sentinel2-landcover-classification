@@ -169,7 +169,6 @@ class FCNHead(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.convs(x)
-        x = self.cls_seg(x)
         return x
 
 
@@ -181,14 +180,30 @@ class PrithviSegmentationModel(nn.Module):
         num_frames: int = 1,
     ) -> None:
         super().__init__()
+        # TODO we don't need to load the entire thing if we only want the encoder!!
         self.backbone: MaskedAutoencoderViT = load_prithvi(num_frames=num_frames)
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
     def forward(self, x):
-        features = self.backbone(x)
+        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask
 
         neck_output = self.neck(features)
 
         output = self.head(neck_output)
         return output
+
+
+if __name__ == "__main__":
+
+    def t() -> None:
+        m = PrithviSegmentationModel(
+            neck=ConvTransformerTokensToEmbeddingNeck(embed_dim=768, output_embed_dim=256),
+            head=FCNHead(num_classes=10, in_channels=256, out_channels=256),
+        )
+        B, T, C, H, W = 2, 1, 6, 224, 224
+        x = torch.randn(B, C, T, H, W)
+        y = m(x)
+        print(y.shape)
+
+    t()
