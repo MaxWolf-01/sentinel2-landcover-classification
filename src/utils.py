@@ -9,12 +9,12 @@ from pathlib import Path
 import torch
 import yaml
 
-from src.prithvi import MaskedAutoencoderViT
+from src.modules.prithvi import MaskedAutoencoderViT
 
 SRC_DIR: Path = Path(__file__).parent
 WEIGHTS_DIR: Path = SRC_DIR.parent / "weights"
 PRITHVI_WEIGHTS: Path = WEIGHTS_DIR / "Prithvi_100M.pt"
-PRITHVI_CONFIG: Path = SRC_DIR / "prithvi_config.yaml"
+PRITHVI_CONFIG: Path = SRC_DIR / "configs" / "prithvi_config.yaml"
 
 
 def load_prithvi(

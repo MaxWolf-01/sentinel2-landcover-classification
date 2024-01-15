@@ -2,7 +2,7 @@ import einops
 import torch
 from torch import nn
 
-from src.prithvi import MaskedAutoencoderViT
+from src.modules.prithvi import MaskedAutoencoderViT
 from src.utils import load_prithvi
 
 
