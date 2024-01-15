@@ -1,4 +1,5 @@
 import typing
+from dataclasses import dataclass
 
 import einops
 import rasterio
@@ -11,7 +12,12 @@ from src.utils import get_logger
 logger = get_logger(__name__)
 
 
-class S2OsmSample(typing.NamedTuple):
+@dataclass
+class S2OSMDatasetConfig(typing.NamedTuple):
+    ...
+
+
+class S2OSMSample(typing.NamedTuple):
     x: torch.Tensor
     y: torch.LongTensor
 
@@ -32,12 +38,12 @@ class S2OSMDataset(Dataset):
     def __len__(self) -> int:
         return len(self.sentinel_files)
 
-    def __getitem__(self, idx: int) -> S2OsmSample:
+    def __getitem__(self, idx: int) -> S2OSMSample:
         # TODO normalization (see notebook) [not sure if we should norm before or after transforms]
         with rasterio.open(self.sentinel_files[idx]) as f:
             sentinel_data = f.read()
-            # TODO: Deal with time & batch dimension
-            sentinel_tensor = torch.from_numpy(sentinel_data / 255.0).float().unsqueeze(0).unsqueeze(0)
+            sentinel_tensor = torch.from_numpy(sentinel_data).float()
+            sentinel_tensor = sentinel_tensor.unsqueeze(0)  # add time dimension (left as 1 for initial experiments)
 
         with rasterio.open(self.osm_files[idx]) as f:
             osm_data = f.read(1)  # read first band
@@ -47,7 +53,7 @@ class S2OSMDataset(Dataset):
             sentinel_tensor = self.transform(sentinel_tensor)
             # todo some transforms like random crop need to be applied to the target as well
 
-        return S2OsmSample(x=sentinel_tensor, y=osm_tensor)
+        return S2OSMSample(x=sentinel_tensor, y=osm_tensor)
 
 
 if __name__ == "__main__":
