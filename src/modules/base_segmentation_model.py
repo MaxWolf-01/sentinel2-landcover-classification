@@ -6,20 +6,6 @@ from src.modules.prithvi import MaskedAutoencoderViT
 from src.utils import load_prithvi
 
 
-def _conv_transpos2d_output(
-    input_size: int,
-    stride: int,
-    padding: int,
-    dilation: int,
-    kernel_size: int,
-    output_padding: int,
-):
-    """Calculate the output size of a ConvTranspose2d.
-    Taken from: https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
-    """
-    return (input_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + output_padding + 1
-
-
 class Norm2d(nn.Module):
     def __init__(self, embed_dim: int):
         super().__init__()
@@ -42,8 +28,8 @@ class ConvTransformerTokensToEmbeddingNeck(nn.Module):
         embed_dim: int,
         output_embed_dim: int,
         # num_frames: int = 1,
-        Hp: int = 14,
-        Wp: int = 14,
+        patch_height: int = 14,
+        patch_width: int = 14,
         drop_cls_token: bool = True,
     ) -> None:
         """
@@ -51,55 +37,35 @@ class ConvTransformerTokensToEmbeddingNeck(nn.Module):
         Args:
             embed_dim (int): Input embedding dimension
             output_embed_dim (int): Output embedding dimension
-            Hp (int, optional): Height (in patches) of embedding to be upscaled. Defaults to 14.
-            Wp (int, optional): Width (in patches) of embedding to be upscaled. Defaults to 14.
+            patch_height (int, optional): Height (in patches) of embedding to be upscaled. Defaults to 14.
+            patch_width (int, optional): Width (in patches) of embedding to be upscaled. Defaults to 14.
             drop_cls_token (bool, optional): Whether there is a cls_token, which should be dropped. This assumes the cls token is the first token. Defaults to True.
         """
         super().__init__()
         self.drop_cls_token = drop_cls_token
-        self.Hp = Hp
-        self.Wp = Wp
-        self.H_out = Hp
-        self.W_out = Wp
+        self.patch_height = patch_height
+        self.patch_width = patch_width
         # self.num_frames = num_frames
 
-        kernel_size = 2
-        stride = 2
-        dilation = 1
-        padding = 0
-        output_padding = 0
-        num_upscales = 4
-        for _ in range(num_upscales):
-            self.H_out = _conv_transpos2d_output(self.H_out, stride, padding, dilation, kernel_size, output_padding)
-            self.W_out = _conv_transpos2d_output(self.W_out, stride, padding, dilation, kernel_size, output_padding)
-
-        self.embed_dim = embed_dim
-        self.output_embed_dim = output_embed_dim
         conv_t2d = lambda inp, out: nn.ConvTranspose2d(  # noqa: E731
-            inp,
-            out,
-            kernel_size=kernel_size,
-            stride=stride,
-            dilation=dilation,
-            padding=padding,
-            output_padding=output_padding,
+            inp, out, kernel_size=2, stride=2, dilation=1, padding=0, output_padding=0
         )
 
         self.feature_pyramid_net = nn.Sequential(
-            conv_t2d(self.embed_dim, self.output_embed_dim),
-            Norm2d(self.output_embed_dim),
+            conv_t2d(embed_dim, output_embed_dim),
+            Norm2d(output_embed_dim),
             nn.GELU(),
-            conv_t2d(self.output_embed_dim, self.output_embed_dim),  # fixme: no norm act correct?
-            conv_t2d(self.output_embed_dim, self.output_embed_dim),
-            Norm2d(self.output_embed_dim),
+            conv_t2d(output_embed_dim, output_embed_dim),  # fixme: is no norm & act correct?
+            conv_t2d(output_embed_dim, output_embed_dim),
+            Norm2d(output_embed_dim),
             nn.GELU(),
-            conv_t2d(self.output_embed_dim, self.output_embed_dim),
+            conv_t2d(output_embed_dim, output_embed_dim),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.drop_cls_token:
             x = x[:, 1:, :]
-        x = einops.rearrange(x, "b (h w) emb -> b emb h w", h=self.Hp, w=self.Wp)
+        x = einops.rearrange(x, "b (h w) emb -> b emb h w", h=self.patch_height, w=self.patch_width)
         x = self.feature_pyramid_net(x)
         return x
 
