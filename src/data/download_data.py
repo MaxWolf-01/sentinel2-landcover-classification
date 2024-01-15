@@ -10,7 +10,6 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
 import sentinelhub as sh
-from sklearn.preprocessing import LabelEncoder
 from pathlib import Path
 import geopandas as gpd
 import numpy.typing as npt
@@ -39,11 +38,11 @@ BASE_DIR: Path = Path(__file__).parent
 DATA_DIR: Path = BASE_DIR.parent.parent / "data"
 SENTINEL_DIR: Path = DATA_DIR / "sentinel"
 OSM_DIR: Path = DATA_DIR / "osm"
-TAG_MAPPING_PATH: Path = BASE_DIR / "tag_mapping.json"
+TAG_MAPPING_PATH: Path = BASE_DIR.parent / "configs" / "tag_mapping.json"
 
 # todo what is the difference to tag mapping?
 # TODO set proper tags
-FEATURE_TAGS = {
+FEATURE_TAGS = {  # class labels are indices in this dict (starting at 1)
     "building": ["yes", "residential", "commercial", "industrial"],
     "highway": ["primary", "secondary", "tertiary", "residential"],
     "landuse": ["residential", "commercial", "industrial", "park"],
@@ -75,7 +74,7 @@ def _create_evalscript(bands: tuple[str, ...]) -> str:
     """
 
 
-def fetch_osm_data_by_tags(class_label: int, segment: BBox, tags: dict) -> gpd.GeoDataFrame:
+def fetch_osm_data_by_tags(segment: BBox, tags: dict, class_label: int) -> gpd.GeoDataFrame:
     """
     Fetch OSM data within the set bounds and with given feature tags, and assign class labels.
 
@@ -156,12 +155,10 @@ def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int) -> None:
 
 
 def fetch_osm_data(segment: BBox, tag_mapping: dict[str, str]) -> gpd.GeoDataFrame:
-    gdf_list = []
-    for feature, tags in FEATURE_TAGS.items():
-        tags_dict = {feature: tags}
-        # FIXME class label is bein assigned the wrong value! should be an idx?!
-        gdf = fetch_osm_data_by_tags(class_label=feature, segment=segment, tags=tags_dict)
-        gdf_list.append(gdf)
+    gdf_list = [
+        fetch_osm_data_by_tags(segment, tags={feature: tags}, class_label=i)
+        for i, (feature, tags) in enumerate(FEATURE_TAGS.items(), start=1)
+    ]
 
     gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
     gdf = standardize_osm_tags(gdf, tag_mapping=tag_mapping)
@@ -176,10 +173,6 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
     pixel_size_y = (maxy - miny) / RESOLUTION[1]
     transform = from_origin(minx, maxy, pixel_size_x, pixel_size_y)
 
-    label_encoder = LabelEncoder()
-    # FIXME why call this here, repeatedly? Also, is it even correct? Do we need really scikit for this? If yes, add it to requirements as well.
-    gdf["class_encoded"] = label_encoder.fit_transform(gdf["class"])
-
     output_path = OSM_DIR / f"{idx}.tif"
     with rasterio.open(
         output_path,
@@ -192,7 +185,7 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
         crs=gdf.crs,
         transform=transform,
     ) as dst:
-        shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class_encoded"]))
+        shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
         burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=0)
         dst.write_band(1, burned)
 
