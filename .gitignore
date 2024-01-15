@@ -6,6 +6,7 @@
 /weights
 /data
 /out
+/logs
 
 # osmx
 **/*cache*/

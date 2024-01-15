@@ -11,20 +11,27 @@ from lightning.pytorch.loggers import WandbLogger
 
 from torch import nn
 
-from src.data.s2osmdatamodule import S2OSMDatamodule
+from src.data.s2osmdatamodule import S2OSMDatamodule, S2OSMDatamoduleConfig
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 
 Mode = Literal["train", "val", "test"]
 
 
 @dataclass
-class Config:
-    # models  # TODO use separate config classes for modules
+class ModelConfig:
     num_frames: int
     embed_dim: int
     output_embed_dim: int
-    out_channels: int
+    patch_height: int
+    patch_width: int
+    fcn_out_channels: int
     num_classess: int
+
+
+@dataclass
+class TrainConfig:
+    model: ModelConfig
+    datamodule: S2OSMDatamoduleConfig  # storing here so it is logged
 
     # optimizer
     lr: float
@@ -39,7 +46,7 @@ class Config:
     disable_compilation: bool
 
     # trainer
-    gpus: int
+    devices: int
     precision: str
 
     # logger
@@ -56,28 +63,26 @@ class Batch:
 class PrithviSegmentationFineTuner(pl.LightningModule):
     def __init__(
         self,
-        config: Config,
+        config: TrainConfig,
         optuna_trial: optuna.Trial | None = None,
     ) -> None:
         super().__init__()
-        self.config: Config = config
+        self.config: TrainConfig = config
         # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
 
-        # TODO use config classes for the Modules
         self.net: nn.Module = PrithviSegmentationModel(
-            num_frames=config.num_frames,
+            num_frames=config.model.num_frames,
             neck=ConvTransformerTokensToEmbeddingNeck(
-                embed_dim=config.embed_dim * config.num_frames,
-                output_embed_dim=config.output_embed_dim,
-                drop_cls_token=True,
-                Hp=14,
-                Wp=14,
+                embed_dim=config.model.embed_dim * config.model.num_frames,
+                output_embed_dim=config.model.output_embed_dim,
+                patch_height=config.model.patch_height,
+                patch_width=config.model.patch_width,
             ),
             head=FCNHead(
-                in_channels=config.output_embed_dim,
-                out_channels=config.out_channels,
-                num_classes=config.num_classess,
+                in_channels=config.model.output_embed_dim,
+                out_channels=config.model.fcn_out_channels,
+                num_classes=config.model.num_classess,
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
@@ -163,7 +168,26 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
 def train() -> None:
     # TODO these are initial / example values
-    config: Config = Config(
+    model_config: ModelConfig = ModelConfig(
+        num_frames=(num_frames := 1),
+        embed_dim=(embed_dim := 768),
+        output_embed_dim=embed_dim * num_frames,
+        patch_height=14,
+        patch_width=14,
+        fcn_out_channels=256,
+        num_classess=7,  # todo
+    )
+    datamodule_config: S2OSMDatamoduleConfig = S2OSMDatamoduleConfig(
+        batch_size=8,
+        num_workers=1,
+        pin_memory=True,
+        use_transforms=False,
+        data_split=(0.8, 0.1, 0.1),
+        val_batch_size_multiplier=2,
+    )
+    config: TrainConfig = TrainConfig(
+        model=model_config,
+        datamodule=datamodule_config,
         project_name="PrithviFineTune",
         lr=1.5e-05,
         weight_decay=0.05,
@@ -171,33 +195,28 @@ def train() -> None:
         float32_matmul_precision="medium",
         mode="max-autotune",
         fullgraph=True,
-        disable_compilation=False,
-        gpus=1,
+        disable_compilation=True,
+        devices=1,
         precision="bf16-mixed",
         use_wandb_logger=False,
         # model defaults (from crop classification cfg)
-        out_channels=256,
-        num_frames=(num_frames := 1),
-        embed_dim=(embed_dim := 768),
-        num_classess=7,  # todo
-        output_embed_dim=embed_dim * num_frames,
     )
 
     model: PrithviSegmentationFineTuner = PrithviSegmentationFineTuner(config)
 
-    datamodule: S2OSMDatamodule = ...
+    datamodule: S2OSMDatamodule = S2OSMDatamodule(datamodule_config)
 
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(monitor="val/loss", mode="min", save_top_k=1, save_last=True, every_n_epochs=1),
         pl.callbacks.LearningRateMonitor(logging_interval="step"),
-        pl.callbacks.BackboneFinetuning,
+        # pl.callbacks.BackboneFinetuning(), might be helpful?
     ]
 
     logger: WandbLogger | None = WandbLogger() if config.use_wandb_logger else None
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,
-        gpus=config.gpus,
+        devices=config.devices,
         precision=config.precision,
         logger=logger,
     )
