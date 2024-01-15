@@ -1,16 +1,58 @@
 import json
 import os
+import typing
+
+import einops
 import numpy as np
 import osmnx as ox
 import pandas as pd
 import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
-from sentinelhub import BBox, CRS, SentinelHubRequest, DataCollection, MimeType, SHConfig
+import sentinelhub as sh
 from sklearn.preprocessing import LabelEncoder
+from pathlib import Path
+import geopandas as gpd
+import numpy.typing as npt
+from tqdm import tqdm
+from dotenv import load_dotenv
 
 
-def _create_evalscript(bands):
+class BBox(typing.NamedTuple):
+    north: float
+    south: float
+    east: float
+    west: float
+
+
+# AUSTRIA_BBOX = ...
+VIENNA_BBOX: BBox = BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188)
+AOI: BBox = VIENNA_BBOX
+
+DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # TODO is this the correct one?
+TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
+BANDS: tuple[str, ...] = ("B02", "B03", "B04", "B05", "B06", "B07")
+RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
+SEGMENT_SIZE: int = 25  # Size of segments in km
+
+BASE_DIR: Path = Path(__file__).parent
+DATA_DIR: Path = BASE_DIR.parent.parent / "data"
+SENTINEL_DIR: Path = DATA_DIR / "sentinel"
+OSM_DIR: Path = DATA_DIR / "osm"
+TAG_MAPPING_PATH: Path = BASE_DIR / "tag_mapping.json"
+
+# todo what is the difference to tag mapping?
+# TODO set proper tags
+FEATURE_TAGS = {
+    "building": ["yes", "residential", "commercial", "industrial"],
+    "highway": ["primary", "secondary", "tertiary", "residential"],
+    "landuse": ["residential", "commercial", "industrial", "park"],
+    "natural": ["water", "wood", "grassland"],
+    "amenity": ["school", "hospital", "parking", "restaurant"],
+}
+
+
+def _create_evalscript(bands: tuple[str, ...]) -> str:
     bands_str = ", ".join([f'"{band}"' for band in bands])
     return f"""
     //VERSION=3
@@ -33,27 +75,28 @@ def _create_evalscript(bands):
     """
 
 
-def fetch_osm_data_by_tags(class_label, segment, tags):
+def fetch_osm_data_by_tags(class_label: int, segment: BBox, tags: dict) -> gpd.GeoDataFrame:
     """
     Fetch OSM data within the set bounds and with given feature tags, and assign class labels.
 
     Parameters:
         class_label (int): Class label to assign to the features.
+        segment (BBox): Segment to fetch data from.
+        tags (dict): Dictionary of feature tags to fetch.
 
     Returns:
-        GeoDataFrame: GeoDataFrame with geometry and class label.
+        gpd.GeoDataFrame: GeoDataFrame with geometry and class label.
     """
-
-    west, south, east, north = segment
-
-    osm_data = ox.features_from_bbox(north=north, south=south, east=east, west=west, tags=tags)
+    osm_data = ox.features_from_bbox(
+        north=segment.north, south=segment.south, east=segment.east, west=segment.west, tags=tags
+    )
     osm_data["class"] = class_label
     return osm_data[["geometry", "class"]]
 
 
-def calculate_segments(min_lon, min_lat, max_lon, max_lat, segment_size_km):
-    lon_diff = max_lon - min_lon
-    lat_diff = max_lat - min_lat
+def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
+    lon_diff = bbox.east - bbox.west
+    lat_diff = bbox.north - bbox.south
     lon_segments = int(np.ceil(lon_diff / (segment_size_km / 111)))
     lat_segments = int(np.ceil(lat_diff / (segment_size_km / 111)))
     segments = []
@@ -61,174 +104,115 @@ def calculate_segments(min_lon, min_lat, max_lon, max_lat, segment_size_km):
     lat_segment_size = lat_diff / lat_segments
     for i in range(lon_segments):
         for j in range(lat_segments):
-            segment_min_lon = min_lon + i * lon_segment_size
+            segment_min_lon = bbox.west + i * lon_segment_size
             segment_max_lon = segment_min_lon + lon_segment_size
-            segment_min_lat = min_lat + j * lat_segment_size
+            segment_min_lat = bbox.south + j * lat_segment_size
             segment_max_lat = segment_min_lat + lat_segment_size
-            segments.append([segment_min_lon, segment_min_lat, segment_max_lon, segment_max_lat])
+            segments.append(
+                BBox(north=segment_max_lat, south=segment_min_lat, east=segment_max_lon, west=segment_min_lon)
+            )
     return segments
 
 
-def standardize_osm_tags(gdf, tag_mapping):
+def standardize_osm_tags(gdf: gpd.GeoDataFrame, tag_mapping: dict[str, str]) -> gpd.GeoDataFrame:
     #   for variant, standard in tag_mapping.items():
     #      gdf.loc[gdf['key'] == variant, 'key'] = standard
     # TODO: Handle tag-mapping
     return gdf
 
 
-class DataGenerator:
-    def __init__(self, config):
-        self.bounds = None
-        self.feature_tags = {
-            "building": ["yes", "residential", "commercial", "industrial"],
-            "highway": ["primary", "secondary", "tertiary", "residential"],
-            "landuse": ["residential", "commercial", "industrial", "park"],
-            "natural": ["water", "wood", "grassland"],
-            "amenity": ["school", "hospital", "parking", "restaurant"],
-        }
+def fetch_sentinel_data(aoi_bbox: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
+    evalscript = _create_evalscript(BANDS)
+    bbox: sh.BBox = sh.BBox((aoi_bbox.west, aoi_bbox.south, aoi_bbox.east, aoi_bbox.north), crs=sh.CRS.WGS84)
+    request = sh.SentinelHubRequest(
+        evalscript=evalscript,
+        input_data=[sh.SentinelHubRequest.input_data(data_collection=DATA_COLLECTION, time_interval=TIME_INTERVAL)],
+        responses=[sh.SentinelHubRequest.output_response("default", sh.MimeType.TIFF)],
+        bbox=bbox,
+        size=RESOLUTION,
+        config=sh_config,
+        data_folder="../data/sentinel/",
+    )
+    return request.get_data(save_data=False)[0]
 
-        self.gdf = None
-        self.tag_mapping = {}
-        self.config = config
 
-    def set_bounds(self, north, south, east, west):
-        self.bounds = (north, south, east, west)
+def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int) -> None:
+    data = einops.rearrange(data, "h w c -> c h w")
+    output_path = SENTINEL_DIR / f"{idx}.tif"
+    with rasterio.open(
+        output_path,
+        "w",
+        driver="GTiff",
+        height=RESOLUTION[0],
+        width=RESOLUTION[1],
+        count=len(BANDS),
+        dtype=data.dtype,
+        crs="+proj=latlong",  # TODO is this correct?
+        transform=rasterio.transform.from_origin(*AOI[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
+    ) as dst:
+        for i in range(len(BANDS)):
+            # Write each band separately | TODO why?
+            dst.write(data[i], i + 1)
 
-    def set_feature_tags(self, feature_tags):
-        self.feature_tags = feature_tags
 
-    def load_tag_mapping(self, file_path):
-        with open(file_path, "r") as file:
-            self.tag_mapping = json.load(file)
+def fetch_osm_data(segment: BBox, tag_mapping: dict[str, str]) -> gpd.GeoDataFrame:
+    gdf_list = []
+    for feature, tags in FEATURE_TAGS.items():
+        tags_dict = {feature: tags}
+        # FIXME class label is bein assigned the wrong value! should be an idx?!
+        gdf = fetch_osm_data_by_tags(class_label=feature, segment=segment, tags=tags_dict)
+        gdf_list.append(gdf)
 
-    def fetch_and_store_data(self, aoi_bbox, time_interval, bands, resolution, segment_size_km=25):
-        segments = calculate_segments(*aoi_bbox, segment_size_km)
-        for idx, segment in enumerate(segments):
-            self.fetch_and_store_sentinel_data(segment, time_interval, bands, resolution, idx)
-            self.fetch_data(segment)
-            self.rasterize_data(os.path.join("../data/osm/", f"osm_data_{idx}.tif"), *resolution)
+    gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
+    gdf = standardize_osm_tags(gdf, tag_mapping=tag_mapping)
+    gdf = gdf.dropna(subset=["geometry"])
+    return gdf
 
-    def fetch_and_store_sentinel_data(self, segment_bbox, time_interval, bands, resolution, idx):
-        request = self.create_request(segment_bbox, time_interval, bands, resolution)
-        data = request.get_data(save_data=False)
 
-        # Assuming data has shape (1, Height, Width, Channels), reshape to (Channels, 1, Height, Width)
-        reshaped_data = data[0].transpose(2, 0, 1)
+def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
+    bounds = gdf.total_bounds
+    minx, miny, maxx, maxy = bounds
+    pixel_size_x = (maxx - minx) / RESOLUTION[0]
+    pixel_size_y = (maxy - miny) / RESOLUTION[1]
+    transform = from_origin(minx, maxy, pixel_size_x, pixel_size_y)
 
-        output_path = os.path.join("../data/sentinel/", f"sentinel_data_{idx}.tif")
+    label_encoder = LabelEncoder()
+    # FIXME why call this here, repeatedly? Also, is it even correct? Do we need really scikit for this? If yes, add it to requirements as well.
+    gdf["class_encoded"] = label_encoder.fit_transform(gdf["class"])
 
-        with rasterio.open(
-            output_path,
-            "w",
-            driver="GTiff",
-            height=resolution[0],
-            width=resolution[1],
-            count=len(bands),
-            dtype=reshaped_data.dtype,
-            crs="+proj=latlong",
-            transform=rasterio.transform.from_origin(*segment_bbox[:2], resolution[0], resolution[1]),
-        ) as dst:
-            for i in range(len(bands)):
-                # Write each band separately
-                dst.write(reshaped_data[i], i + 1)
+    output_path = OSM_DIR / f"{idx}.tif"
+    with rasterio.open(
+        output_path,
+        "w",
+        driver="GTiff",
+        height=RESOLUTION[0],
+        width=RESOLUTION[1],
+        count=1,
+        dtype="uint8",
+        crs=gdf.crs,
+        transform=transform,
+    ) as dst:
+        shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class_encoded"]))
+        burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=0)
+        dst.write_band(1, burned)
 
-    def create_request(self, aoi_bbox, time_interval, bands, resolution):
-        evalscript = _create_evalscript(bands)
-        bbox = BBox(bbox=aoi_bbox, crs=CRS.WGS84)
-        return SentinelHubRequest(
-            evalscript=evalscript,
-            input_data=[
-                SentinelHubRequest.input_data(data_collection=DataCollection.SENTINEL2_L1C, time_interval=time_interval)
-            ],
-            responses=[SentinelHubRequest.output_response("default", MimeType.TIFF)],
-            bbox=bbox,
-            size=resolution,
-            config=self.config,
-            data_folder="../data/sentinel/",
-        )
 
-    def fetch_data(self, segment):
-        gdf_list = []
-        for feature, tags in self.feature_tags.items():
-            tags_dict = {feature: tags}  # TODO: Improve code efficiency
-            gdf = fetch_osm_data_by_tags(class_label=feature, segment=segment, tags=tags_dict)
-            gdf_list.append(gdf)
+def main() -> None:
+    load_dotenv()
+    config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
+    with TAG_MAPPING_PATH.open("r") as file:
+        tag_mapping: dict[str, str] = json.load(file)
 
-        self.gdf = pd.concat(gdf_list, ignore_index=True)
-        self.gdf = standardize_osm_tags(self.gdf, self.tag_mapping)
-        self.gdf = self.gdf.dropna(subset=["geometry"])
+    SENTINEL_DIR.mkdir(exist_ok=True, parents=True)
+    OSM_DIR.mkdir(exist_ok=True, parents=True)
 
-    def rasterize_data(self, output_path, tile_width, tile_height):
-        if self.gdf is None:
-            raise ValueError("GeoDataFrame is empty. Fetch data first.")
-
-        bounds = self.gdf.total_bounds
-        minx, miny, maxx, maxy = bounds
-        pixel_size_x = (maxx - minx) / tile_width
-        pixel_size_y = (maxy - miny) / tile_height
-        transform = from_origin(minx, maxy, pixel_size_x, pixel_size_y)
-
-        label_encoder = LabelEncoder()
-        self.gdf["class_encoded"] = label_encoder.fit_transform(
-            self.gdf["class"]
-        )  # FIXME why call this here, repeatedly?
-
-        with rasterio.open(
-            output_path,
-            "w",
-            driver="GTiff",
-            height=tile_height,
-            width=tile_width,
-            count=1,
-            dtype="uint8",
-            crs=self.gdf.crs,
-            transform=transform,
-        ) as dst:
-            shapes = ((geom, value) for geom, value in zip(self.gdf.geometry, self.gdf["class_encoded"]))
-            burned = rasterize(shapes=shapes, out_shape=(tile_height, tile_width), transform=transform, fill=0)
-            dst.write_band(1, burned)
-
-    def get_data_frame(self):  # FIXME never used
-        if self.gdf is None:
-            raise ValueError("GeoDataFrame is empty. Fetch data first.")
-        return self.gdf
-
-    def main(self):
-        # Initialize Sentinel Hub configuration
-        config = SHConfig(
-            sh_client_id="6a27779e-becf-49f4-8c28-27f5fdabb0dc", sh_client_secret="dSc8LwCGLEFNfb15dGqheAQM9v2HyMfF"
-        )
-
-        # Set the bounds for Vienna (approximate)
-        vienna_bounds = (15.117188, 47.739323, 16.567383, 48.341646)
-
-        # Set the time interval for Sentinel-2 data
-        time_interval = ("2023-07-01", "2023-07-15")  # Example time interval
-
-        bands = ("B02", "B03", "B04", "B05", "B06", "B07")  # Prithvi Bands
-
-        # Specify the resolution
-        resolution = (512, 512)  # Width and Height in pixels
-
-        # Initialize the DataGenerator
-        data_generator = DataGenerator(config)
-
-        # Load tag mapping from a JSON file (you need to create this file based on your requirements)
-        data_generator.load_tag_mapping("tag_mapping.json")
-
-        # Set feature tags for OSM data (you need to define these based on your requirements)
-        self.feature_tags = {"building": "yes", "highway": ["primary", "secondary"]}
-
-        # Fetch and store data for Vienna
-        data_generator.fetch_and_store_data(vienna_bounds, time_interval, bands, resolution)
+    segments: list[BBox] = calculate_segments(AOI, SEGMENT_SIZE)
+    for idx, segment in enumerate(tqdm(segments)):
+        sentinel_data: npt.NDArray = fetch_sentinel_data(aoi_bbox=segment, sh_config=config)
+        save_sentinel_data_as_geotiff(sentinel_data, idx=idx)
+        osm_data = fetch_osm_data(segment, tag_mapping=tag_mapping)
+        save_rasterized_osm_data(osm_data, idx=idx)
 
 
 if __name__ == "__main__":
-    # Initialize Sentinel Hub configuration
-    config = SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
-
-    # Create an instance of the DataGenerator class with the configuration
-    data_generator = DataGenerator(config)
-
-    # Call the main function of the data generator
-    data_generator.main()
+    main()
