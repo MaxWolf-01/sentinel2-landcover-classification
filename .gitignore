@@ -8,7 +8,7 @@
 /out
 
 # osmx
-**/cache/
+**/*cache*/
 
 # Editing tools and IDEs #
 ##########################

@@ -191,6 +191,7 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
 
 
 def main() -> None:
+    ox.config(use_cache=True, cache_folder=BASE_DIR.parent.parent / "osmnx_cache")
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
     with TAG_MAPPING_PATH.open("r") as file:
