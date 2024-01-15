@@ -9,7 +9,7 @@ import lightning.pytorch as pl
 import torch
 from torch.utils.data import Subset
 
-from src.data.s2osmdataset import S2OSMDataset, S2OsmDatasetConfig
+from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class S2OSMDatamoduleConfig:
-    dataset_cfg: S2OsmDatasetConfig
+    dataset_cfg: S2OSMDatasetConfig
     batch_size: int
     num_workers: int
     pin_memory: bool
@@ -30,7 +30,7 @@ class S2OSMDatamoduleConfig:
 class S2OSMDatamodule(pl.LightningDataModule):
     def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
         super().__init__()
-        self.dataset_cfg: S2OsmDatasetConfig = cfg.dataset_cfg
+        self.dataset_cfg: S2OSMDatasetConfig = cfg.dataset_cfg
 
         self.batch_size: int = cfg.batch_size
         self.num_workers: int = cfg.num_workers

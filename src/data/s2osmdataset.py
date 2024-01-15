@@ -23,9 +23,9 @@ class S2OSMSample(typing.NamedTuple):
 
 
 class S2OSMDataset(Dataset):
-    def __init__(self, transform: typing.Callable[[torch.Tensor], torch.Tensor] | None = None) -> None:
+    def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
-        self.transform = transform
+        self.transform: typing.Callable[[torch.Tensor], torch.Tensor] | None = None  # to be set later
         self.sentinel_files = list(SENTINEL_DIR.glob("*.tif"))
         self.osm_files = list(OSM_DIR.glob("*.tif"))
         assert len(self.sentinel_files) == len(self.osm_files), (
@@ -51,7 +51,7 @@ class S2OSMDataset(Dataset):
 
         if self.transform is not None:
             sentinel_tensor = self.transform(sentinel_tensor)
-            # todo some transforms like random crop need to be applied to the target as well
+            # TODO!! some transforms like random crop need to be applied to the target as well
 
         return S2OSMSample(x=sentinel_tensor, y=osm_tensor)
 
