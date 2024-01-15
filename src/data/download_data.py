@@ -16,6 +16,8 @@ import numpy.typing as npt
 from tqdm import tqdm
 from dotenv import load_dotenv
 
+from src.data.paths import BASE_DIR, SENTINEL_DIR, OSM_DIR
+
 
 class BBox(typing.NamedTuple):
     north: float
@@ -34,10 +36,6 @@ BANDS: tuple[str, ...] = ("B02", "B03", "B04", "B05", "B06", "B07")
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
-BASE_DIR: Path = Path(__file__).parent
-DATA_DIR: Path = BASE_DIR.parent.parent / "data"
-SENTINEL_DIR: Path = DATA_DIR / "sentinel"
-OSM_DIR: Path = DATA_DIR / "osm"
 TAG_MAPPING_PATH: Path = BASE_DIR.parent / "configs" / "tag_mapping.json"
 
 # todo what is the difference to tag mapping?
