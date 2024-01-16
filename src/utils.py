@@ -9,12 +9,11 @@ from pathlib import Path
 import torch
 import yaml
 
+from src.configs.paths import PRE_TRAINED_WEIGHTS_DIR, CONFIG_DIR
 from src.modules.prithvi import MaskedAutoencoderViT
 
-SRC_DIR: Path = Path(__file__).parent
-WEIGHTS_DIR: Path = SRC_DIR.parent / "weights"
-PRITHVI_WEIGHTS: Path = WEIGHTS_DIR / "Prithvi_100M.pt"
-PRITHVI_CONFIG: Path = SRC_DIR / "configs" / "prithvi_config.yaml"
+PRITHVI_WEIGHTS: Path = PRE_TRAINED_WEIGHTS_DIR / "Prithvi_100M.pt"
+PRITHVI_CONFIG: Path = CONFIG_DIR / "prithvi_config.yaml"
 
 
 def load_prithvi(
@@ -72,7 +71,3 @@ def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
         logger.addHandler(console_handler)
 
     return logger
-
-
-if __name__ == "__main__":
-    print(load_prithvi_mean_std())

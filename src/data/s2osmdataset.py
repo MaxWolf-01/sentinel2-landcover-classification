@@ -6,7 +6,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.data.paths import SENTINEL_DIR, OSM_DIR
+from src.configs.paths import SENTINEL_DIR, OSM_DIR
 from src.utils import get_logger
 import albumentations as A
 import numpy.typing as npt

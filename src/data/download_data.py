@@ -16,7 +16,7 @@ import numpy.typing as npt
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from src.data.paths import BASE_DIR, SENTINEL_DIR, OSM_DIR
+from src.configs.paths import CONFIG_DIR, SENTINEL_DIR, OSM_DIR, ROOT_DIR
 
 
 class BBox(typing.NamedTuple):
@@ -36,7 +36,7 @@ BANDS: tuple[str, ...] = ("B02", "B03", "B04", "B05", "B06", "B07")
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
-TAG_MAPPING_PATH: Path = BASE_DIR.parent / "configs" / "tag_mapping.json"
+TAG_MAPPING_PATH: Path = CONFIG_DIR / "tag_mapping.json"
 
 # todo what is the difference to tag mapping?
 # TODO set proper tags
@@ -189,7 +189,7 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
 
 
 def main() -> None:
-    ox.config(use_cache=True, cache_folder=BASE_DIR.parent.parent / "osmnx_cache")
+    ox.config(use_cache=True, cache_folder=ROOT_DIR / "osmnx_cache")
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
     with TAG_MAPPING_PATH.open("r") as file:
