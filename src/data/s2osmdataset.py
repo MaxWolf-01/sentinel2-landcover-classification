@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 
 from src.data.paths import SENTINEL_DIR, OSM_DIR
 from src.utils import get_logger
+import albumentations as A
+import numpy.typing as npt
 
 logger = get_logger(__name__)
 
@@ -25,33 +27,34 @@ class S2OSMSample(typing.NamedTuple):
 class S2OSMDataset(Dataset):
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
-        self.transform: typing.Callable[[torch.Tensor], torch.Tensor] | None = None  # to be set later
-        self.sentinel_files = list(SENTINEL_DIR.glob("*.tif"))
-        self.osm_files = list(OSM_DIR.glob("*.tif"))
-        assert len(self.sentinel_files) == len(self.osm_files), (
+        self.transform: A.Compose | None = None  # to be set in the datamodule TODO why? can we remove this hack?
+        self._sentinel_files = list(SENTINEL_DIR.glob("*.tif"))
+        self._osm_files = list(OSM_DIR.glob("*.tif"))
+        assert len(self._sentinel_files) == len(self._osm_files), (
             f"There are different amounts of input data and labels:\n"
-            f"Input Data:{self.sentinel_files}\nLabels: {self.osm_files}"
+            f"Input Data:{self._sentinel_files}\nLabels: {self._osm_files}"
         )
 
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
     def __len__(self) -> int:
-        return len(self.sentinel_files)
+        return len(self._sentinel_files)
 
     def __getitem__(self, idx: int) -> S2OSMSample:
-        # TODO normalization (see notebook) [not sure if we should norm before or after transforms]
-        with rasterio.open(self.sentinel_files[idx]) as f:
-            sentinel_data = f.read()
-            sentinel_tensor = torch.from_numpy(sentinel_data).float()
-            sentinel_tensor = sentinel_tensor.unsqueeze(0)  # add time dimension (left as 1 for initial experiments)
-
-        with rasterio.open(self.osm_files[idx]) as f:
-            osm_data = f.read(1)  # read first band
-            osm_tensor = torch.from_numpy(osm_data).long().unsqueeze(0)
+        with rasterio.open(self._sentinel_files[idx]) as f:
+            sentinel_data: npt.NDArray = f.read()
+        with rasterio.open(self._osm_files[idx]) as f:
+            osm_data: npt.NDArray = f.read(1)  # read first band
 
         if self.transform is not None:
-            sentinel_tensor = self.transform(sentinel_tensor)
-            # TODO!! some transforms like random crop need to be applied to the target as well
+            sentinel_data = einops.rearrange(sentinel_data, "c h w -> h w c")  # albumentations uses chan last
+            transformed: dict[str, typing.Any] = self.transform(image=sentinel_data, mask=osm_data)
+            sentinel_data = transformed["image"]
+            osm_data = transformed["mask"]
+            sentinel_data = einops.rearrange(sentinel_data, "h w c -> c h w")
+
+        sentinel_tensor = torch.from_numpy(sentinel_data).float().unsqueeze(1)  # add time dim (1, for now)
+        osm_tensor = torch.from_numpy(osm_data).long()
 
         return S2OSMSample(x=sentinel_tensor, y=osm_tensor)
 
@@ -61,7 +64,7 @@ if __name__ == "__main__":
     def t() -> None:
         from src.utils import load_prithvi
 
-        ds = S2OSMDataset()
+        ds = S2OSMDataset(S2OSMDatasetConfig())
         model = load_prithvi(num_frames=1)
         x = ds[0].x  # (1, 1, 3, 512, 512)
         # TODO don't forget target needs to be cropped to the same location as the input as well

@@ -73,7 +73,7 @@ class ConvTransformerTokensToEmbeddingNeck(nn.Module):
 class FCNHead(nn.Module):
     """Fully Convolution Networks for Semantic Segmentation.
 
-    Implementation of `FCNNet <https://arxiv.org/abs/1411.4038>`_.
+    Implementation of `FCNNet <https://arxiv.org/abs/1411.4038>`.
     """
 
     def __init__(
@@ -123,6 +123,7 @@ class PrithviSegmentationModel(nn.Module):
         self.head: nn.Module = head
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Input shape: (B, T, C, H, W); Output shape: (B, num_classes, H, W)"""
         features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
 
         neck_output = self.neck(features)

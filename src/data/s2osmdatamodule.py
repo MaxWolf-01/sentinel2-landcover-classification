@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import lightning.pytorch as pl
 import torch
 from torch.utils.data import Subset
+import albumentations as A
 
 from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
 from src.utils import get_logger
@@ -26,11 +27,14 @@ class S2OSMDatamoduleConfig:
     # Increase the batch size for validation by this factor. Possible if no_grad is used in validation step.
     val_batch_size_multiplier: int
 
+    # transform params
+    random_crop_size: int
+
 
 class S2OSMDatamodule(pl.LightningDataModule):
     def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
         super().__init__()
-        self.dataset_cfg: S2OSMDatasetConfig = cfg.dataset_cfg
+        self.cfg: S2OSMDatamoduleConfig = cfg
 
         self.batch_size: int = cfg.batch_size
         self.num_workers: int = cfg.num_workers
@@ -53,23 +57,23 @@ class S2OSMDatamodule(pl.LightningDataModule):
         )
 
     def setup(self, stage: str | None = None) -> None:
-        dataset: S2OSMDataset = S2OSMDataset(self.dataset_cfg)
+        dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
 
-        train_len = int(self.data_split[0] * len(dataset))
-        val_len = int(self.data_split[1] * len(dataset))
-        test_len = len(dataset) - train_len - val_len if self.data_split[2] > 0 else 0
+        train_len: int = int(self.data_split[0] * len(dataset))
+        val_len: int = int(self.data_split[1] * len(dataset))
+        test_len: int = len(dataset) - train_len - val_len if self.data_split[2] > 0 else 0
 
-        all_indicies = list(range(len(dataset)))
+        all_indicies: list[int] = list(range(len(dataset)))
         random.shuffle(all_indicies)
-        train_indices = all_indicies[:train_len]
-        val_indices = all_indicies[train_len : train_len + val_len]
-        test_indices = all_indicies[train_len + val_len :]
+        train_indices: list[int] = all_indicies[:train_len]
+        val_indices: list[int] = all_indicies[train_len : train_len + val_len]
+        test_indices: list[int] = all_indicies[train_len + val_len :]
 
-        self.train = copy.deepcopy(dataset)
+        self.train: S2OSMDataset = copy.deepcopy(dataset)
         self.train.indices = train_indices
-        self.val = copy.deepcopy(dataset)
+        self.val: S2OSMDataset = copy.deepcopy(dataset)
         self.val.indices = val_indices
-        self.test = copy.deepcopy(dataset)
+        self.test: S2OSMDataset = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
         logger.info(f"Datamodule setup with {train_len} train, {val_len} val and {test_len} test samples.")
@@ -79,8 +83,25 @@ class S2OSMDatamodule(pl.LightningDataModule):
 
         logger.info("Configuring data augmentations ...")
 
-        train_transforms = []
-        val_test_transforms = []
+        # todo add transforms after evaluation pipeline is set up
+        train_transforms: A.Compose = A.Compose(
+            [
+                A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
+                # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
+                # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
+                # TODO calculate stats for dataset (for each band) & load from config; the hls expiro
+                # NOTE: We either need a method for running calculation of mean and std OR for starters,
+                # we could also just try how using the prithvi stds and means goes!!
+                # A.Normalize(mean=[...], std=[...]),  # Normalize comes last!
+            ]
+        )
+        # Use non-random transforms for validation and test
+        val_test_transforms: A.Compose = A.Compose(
+            [
+                A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
+                # A.Normalize(mean=[...], std=[...]),
+            ]
+        )
 
         # Avoid data-leakage through augmentation -> aplpy transforms to train, val and test separately
         self.train.transform = train_transforms

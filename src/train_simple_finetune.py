@@ -12,6 +12,7 @@ from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
 from src.data.s2osmdatamodule import S2OSMDatamodule, S2OSMDatamoduleConfig
+from src.data.s2osmdataset import S2OSMDatasetConfig
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 
 Mode = Literal["train", "val", "test"]
@@ -96,7 +97,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             #     "accuracy": torchmetrics.Accuracy(),
             # }
         }
-        # TODO, for debugging and monitoring: log images; log prediction of a fixed bbox over time; log attention maps
+        # TODO, for debugging and monitoring: log images; log prediction of a fixed bbox over time; log attention maps, plot confusion matrix
 
         torch.set_float32_matmul_precision(self.config.float32_matmul_precision)
 
@@ -154,6 +155,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         logits = self.net(x)
 
+        print(logits.shape, y.shape)
         loss = self.loss_fn(logits, y)
 
         if self.trainer.sanity_checking:
@@ -177,13 +179,17 @@ def train() -> None:
         fcn_out_channels=256,
         num_classess=7,  # todo
     )
+    dataset_confg: S2OSMDatasetConfig = S2OSMDatasetConfig()
     datamodule_config: S2OSMDatamoduleConfig = S2OSMDatamoduleConfig(
+        dataset_cfg=dataset_confg,
         batch_size=8,
         num_workers=1,
         pin_memory=True,
-        use_transforms=False,
+        use_transforms=True,
         data_split=(0.8, 0.1, 0.1),
         val_batch_size_multiplier=2,
+        # transforms
+        random_crop_size=224,
     )
     config: TrainConfig = TrainConfig(
         model=model_config,
