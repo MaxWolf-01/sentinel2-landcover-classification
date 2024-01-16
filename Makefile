@@ -1,16 +1,3 @@
-ENV_MANAGER := $(shell command -v mamba || echo conda)
-
-setup_prithvi_env:
-	$(ENV_MANAGER) create -n prithvi python=3.9 -y; \
-	echo "Activate the env with '$(ENV_MANAGER) activate prithvi' -> continue with \`make setup_prithvi_env2\`";
-
-setup_prithvi_env2:
-	pip install --no-input torch==1.11.0+cu115 torchvision==0.12.0+cu115 --extra-index-url https://download.pytorch.org/whl/cu115;  \
-	cd src/models/hls-foundation-os; \
-	pip insatll -e .; \
-	pip install -U openmim; \
-	mim install mmcv-full==1.6.2 -f https://download.openmmlab.com/mmcv/dist/cu115/torch1.11.0/index.html; \
-	pip install -r requirements.txt;
 
 help:  ## Show help
 	@grep -E '^[.a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

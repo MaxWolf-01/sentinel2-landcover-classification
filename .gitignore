@@ -1,9 +1,15 @@
 *.pt
 *.ckpt
 *.json
+*.npy
 
 /weights
 /data
+/out
+/logs
+
+# osmx
+**/*cache*/
 
 # Editing tools and IDEs #
 ##########################
