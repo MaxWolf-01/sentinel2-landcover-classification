@@ -41,6 +41,12 @@ def get_run_name(project_name: str, prefix: str | None = None) -> str:
     return f"{project_name}_{short_uuid}"
 
 
+def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)["train_params"]
+    return config["data_mean"], config["data_std"]
+
+
 def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
     log_directory = Path(__file__).parent.parent / "logs" / "system"
     log_directory.mkdir(parents=True, exist_ok=True)
@@ -66,3 +72,7 @@ def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
         logger.addHandler(console_handler)
 
     return logger
+
+
+if __name__ == "__main__":
+    print(load_prithvi_mean_std())

@@ -11,7 +11,7 @@ from torch.utils.data import Subset
 import albumentations as A
 
 from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import get_logger
+from src.utils import get_logger, load_prithvi_mean_std
 
 logger = get_logger(__name__)
 
@@ -83,23 +83,21 @@ class S2OSMDatamodule(pl.LightningDataModule):
 
         logger.info("Configuring data augmentations ...")
 
+        mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
         # todo add transforms after evaluation pipeline is set up
         train_transforms: A.Compose = A.Compose(
             [
                 A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
                 # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
                 # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-                # TODO calculate stats for dataset (for each band) & load from config; the hls expiro
-                # NOTE: We either need a method for running calculation of mean and std OR for starters,
-                # we could also just try how using the prithvi stds and means goes!!
-                # A.Normalize(mean=[...], std=[...]),  # Normalize comes last!
+                A.Normalize(mean=mean, std=std),  # Normalize comes last!
             ]
         )
         # Use non-random transforms for validation and test
         val_test_transforms: A.Compose = A.Compose(
             [
                 A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-                # A.Normalize(mean=[...], std=[...]),
+                A.Normalize(mean=mean, std=std),  # Normalize comes last!
             ]
         )
 
