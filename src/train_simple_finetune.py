@@ -90,12 +90,12 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         # TODO mIoU
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
-            # "train": {
-            #     "accuracy": torchmetrics.Accuracy(),
-            # },
-            # "val": {
-            #     "accuracy": torchmetrics.Accuracy(),
-            # }
+            "train": {
+                #     "accuracy": torchmetrics.Accuracy(),
+            },
+            "val": {
+                #     "accuracy": torchmetrics.Accuracy(),
+            },
         }
         # TODO, for debugging and monitoring: log images; log prediction of a fixed bbox over time; log attention maps, plot confusion matrix
 
@@ -187,7 +187,7 @@ def train() -> None:
         pin_memory=True,
         use_transforms=True,
         data_split=(0.8, 0.1, 0.1),
-        val_batch_size_multiplier=2,
+        val_batch_size_multiplier=1,
         # transforms
         random_crop_size=224,
     )
