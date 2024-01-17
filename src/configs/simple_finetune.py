@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import copy
 from dataclasses import dataclass
 
 from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
@@ -80,12 +82,12 @@ CONFIG = Config(
         compile_disable=True,
         devices=1,
         precision="bf16-mixed",
-        use_wandb_logger=False,
+        use_wandb_logger=True,
     ),
 )
 
 
-DEBUG_CFG = CONFIG
+DEBUG_CFG = copy.deepcopy(CONFIG)
 DEBUG_CFG.train.use_wandb_logger = False
 DEBUG_CFG.train.devices = 1
 DEBUG_CFG.datamodule.batch_size = 2
