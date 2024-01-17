@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import typing
 
@@ -11,13 +10,13 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
 import sentinelhub as sh
-from pathlib import Path
 import geopandas as gpd
 import numpy.typing as npt
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from src.configs.paths import CONFIG_DIR, SENTINEL_DIR, OSM_DIR, ROOT_DIR
+from src.configs.label_mappings import LabelMap, OSMTagMap, GENERAL_MAP
+from src.configs.paths import SENTINEL_DIR, OSM_DIR, ROOT_DIR
 from src.utils import load_pritvhi_bands
 
 
@@ -31,7 +30,7 @@ class BBox(typing.NamedTuple):
 AOIs: dict[str, BBox] = {
     "VIE": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
     "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # ca. 150 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    "AT": ...,
+    # "AT": ...,
 }
 
 DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # TODO is this the correct one?
@@ -40,16 +39,9 @@ BANDS: list[str] = load_pritvhi_bands()
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
-TAG_MAPPING_PATH: Path = CONFIG_DIR / "tag_mapping.json"
-
-# todo what is the difference to tag mapping? (I think FEATURE_TAGS should be deleted and built from tag_mapping.json!)
-# TODO set proper tags
-FEATURE_TAGS = {  # class labels are indices in this dict (starting at 1)
-    "building": ["yes", "residential", "commercial", "industrial"],
-    "highway": ["primary", "secondary", "tertiary", "residential"],
-    "landuse": ["residential", "commercial", "industrial", "park"],
-    "natural": ["water", "wood", "grassland"],
-    "amenity": ["school", "hospital", "parking", "restaurant"],
+LABEL_MAPPINGS: dict[str, LabelMap] = {
+    "general": GENERAL_MAP,
+    # "soil_sealing": ...
 }
 
 
@@ -76,7 +68,7 @@ def _create_evalscript(bands: list[str]) -> str:
     """
 
 
-def fetch_osm_data_by_tags(segment: BBox, tags: dict, class_label: int) -> gpd.GeoDataFrame:
+def fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) -> gpd.GeoDataFrame:
     """
     Fetch OSM data within the set bounds and with given feature tags, and assign class labels.
 
@@ -115,13 +107,6 @@ def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     return segments
 
 
-def standardize_osm_tags(gdf: gpd.GeoDataFrame, tag_mapping: dict[str, str]) -> gpd.GeoDataFrame:
-    #   for variant, standard in tag_mapping.items():
-    #      gdf.loc[gdf['key'] == variant, 'key'] = standard
-    # TODO: Handle tag-mapping
-    return gdf
-
-
 def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
     evalscript = _create_evalscript(BANDS)
     bbox: sh.BBox = sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=sh.CRS.WGS84)
@@ -141,29 +126,25 @@ def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> Non
     data = einops.rearrange(data, "h w c -> c h w")
     output_path = SENTINEL_DIR / f"{idx}.tif"
     with rasterio.open(
-        output_path,
-        "w",
-        driver="GTiff",
-        height=RESOLUTION[0],
-        width=RESOLUTION[1],
-        count=len(BANDS),
-        dtype=data.dtype,
-        crs="+proj=latlong",  # TODO is this correct?
-        transform=rasterio.transform.from_origin(*aoi[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
+            output_path,
+            "w",
+            driver="GTiff",
+            height=RESOLUTION[0],
+            width=RESOLUTION[1],
+            count=len(BANDS),
+            dtype=data.dtype,
+            crs="+proj=latlong",  # TODO is this correct?
+            transform=rasterio.transform.from_origin(*aoi[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
     ) as dst:
         for i in range(len(BANDS)):
             # Write each band separately | TODO why?
             dst.write(data[i], i + 1)
 
 
-def fetch_osm_data(segment: BBox, tag_mapping: dict[str, str]) -> gpd.GeoDataFrame:
-    gdf_list = [
-        fetch_osm_data_by_tags(segment, tags={feature: tags}, class_label=i)
-        for i, (feature, tags) in enumerate(FEATURE_TAGS.items(), start=1)
-    ]
-
+def fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
+    gdf_list = [fetch_osm_data_by_tags(segment, tags=entry["osm_tags"], class_label=entry["idx"])
+                for entry in tag_mapping.values()]
     gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
-    gdf = standardize_osm_tags(gdf, tag_mapping=tag_mapping)
     gdf = gdf.dropna(subset=["geometry"])
     return gdf
 
@@ -177,15 +158,15 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
 
     output_path = OSM_DIR / f"{idx}.tif"
     with rasterio.open(
-        output_path,
-        "w",
-        driver="GTiff",
-        height=RESOLUTION[0],
-        width=RESOLUTION[1],
-        count=1,
-        dtype="uint8",
-        crs=gdf.crs,
-        transform=transform,
+            output_path,
+            "w",
+            driver="GTiff",
+            height=RESOLUTION[0],
+            width=RESOLUTION[1],
+            count=1,
+            dtype="uint8",
+            crs=gdf.crs,
+            transform=transform,
     ) as dst:
         shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
         burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=0)
@@ -194,24 +175,26 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="VIE", help=f"Supply an AOI. Default: VIE. Available:{list(AOIs)}")
+    parser.add_argument("--aoi", type=str, default="VIE", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
+    parser.add_argument(
+        "--labels", type=str, default="general", help="Specify a label mapping to use. Default: general."
+    )
     args = parser.parse_args()
-    aoi = args.aoi or "VIE"
+    aoi = AOIs[args.aoi or "VIE"]
+    label_map = LABEL_MAPPINGS[args.labels or "general"]
 
     ox.config(use_cache=True, cache_folder=ROOT_DIR / "osmnx_cache")
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
-    with TAG_MAPPING_PATH.open("r") as file:
-        tag_mapping: dict[str, str] = json.load(file)
 
     SENTINEL_DIR.mkdir(exist_ok=True, parents=True)
     OSM_DIR.mkdir(exist_ok=True, parents=True)
 
-    segments: list[BBox] = calculate_segments(AOIs[aoi], SEGMENT_SIZE)
+    segments: list[BBox] = calculate_segments(aoi, SEGMENT_SIZE)
     for idx, segment in enumerate(tqdm(segments)):
         sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=config)
         save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=aoi)
-        osm_data = fetch_osm_data(segment, tag_mapping=tag_mapping)
+        osm_data = fetch_osm_data(segment, tag_mapping=label_map)
         save_rasterized_osm_data(osm_data, idx=idx)
 
 
