@@ -9,12 +9,11 @@ from pathlib import Path
 import torch
 import yaml
 
+from src.configs.paths import PRE_TRAINED_WEIGHTS_DIR, CONFIG_DIR
 from src.modules.prithvi import MaskedAutoencoderViT
 
-SRC_DIR: Path = Path(__file__).parent
-WEIGHTS_DIR: Path = SRC_DIR.parent / "weights"
-PRITHVI_WEIGHTS: Path = WEIGHTS_DIR / "Prithvi_100M.pt"
-PRITHVI_CONFIG: Path = SRC_DIR / "configs" / "prithvi_config.yaml"
+PRITHVI_WEIGHTS: Path = PRE_TRAINED_WEIGHTS_DIR / "Prithvi_100M.pt"
+PRITHVI_CONFIG: Path = CONFIG_DIR / "prithvi_config.yaml"
 
 
 def load_prithvi(
@@ -34,17 +33,23 @@ def load_prithvi(
     return model
 
 
+def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)["train_params"]
+    return config["data_mean"], config["data_std"]
+
+
+def load_pritvhi_bands() -> list[str]:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)["train_params"]
+    return config["bands"]
+
+
 def get_run_name(project_name: str, prefix: str | None = None) -> str:
     short_uuid: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     if prefix is not None:
         return f"{project_name}_{prefix}_{short_uuid}"
     return f"{project_name}_{short_uuid}"
-
-
-def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
-    with PRITHVI_CONFIG.open("r") as f:
-        config = yaml.safe_load(f)["train_params"]
-    return config["data_mean"], config["data_std"]
 
 
 def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
@@ -72,7 +77,3 @@ def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
         logger.addHandler(console_handler)
 
     return logger
-
-
-if __name__ == "__main__":
-    print(load_prithvi_mean_std())

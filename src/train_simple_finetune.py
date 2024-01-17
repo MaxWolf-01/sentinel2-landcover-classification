@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import argparse
 from typing import Any, Literal
 
 import lightning.pytorch as pl
@@ -11,64 +11,21 @@ from lightning.pytorch.loggers import WandbLogger
 
 from torch import nn
 
-from src.data.s2osmdatamodule import S2OSMDatamodule, S2OSMDatamoduleConfig
-from src.data.s2osmdataset import S2OSMDatasetConfig
+from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
+from src.configs.simple_finetune import Config
+from src.data.s2osmdatamodule import S2OSMDatamodule
+from src.data.s2osmdataset import S2OSMSample
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
+import src.configs.simple_finetune as cfg
+from src.utils import get_run_name
 
 Mode = Literal["train", "val", "test"]
 
 
-@dataclass
-class ModelConfig:
-    num_frames: int
-    embed_dim: int
-    output_embed_dim: int
-    patch_height: int
-    patch_width: int
-    fcn_out_channels: int
-    num_classess: int
-
-
-@dataclass
-class TrainConfig:
-    model: ModelConfig
-    datamodule: S2OSMDatamoduleConfig  # storing here so it is logged
-
-    # optimizer
-    lr: float
-    weight_decay: float
-    betas: tuple[float, float]
-
-    float32_matmul_precision: str
-
-    # compile
-    mode: str
-    fullgraph: bool
-    disable_compilation: bool
-
-    # trainer
-    devices: int
-    precision: str
-
-    # logger
-    use_wandb_logger: bool
-    project_name: str
-
-
-@dataclass
-class Batch:
-    x: torch.Tensor
-    y: torch.Tensor
-
-
 class PrithviSegmentationFineTuner(pl.LightningModule):
-    def __init__(
-        self,
-        config: TrainConfig,
-        optuna_trial: optuna.Trial | None = None,
-    ) -> None:
+    def __init__(self, config: Config, optuna_trial: optuna.Trial | None = None) -> None:
         super().__init__()
-        self.config: TrainConfig = config
+        self.config: Config = config
         # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
 
@@ -99,13 +56,13 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         }
         # TODO, for debugging and monitoring: log images; log prediction of a fixed bbox over time; log attention maps, plot confusion matrix
 
-        torch.set_float32_matmul_precision(self.config.float32_matmul_precision)
+        torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-        self.net: nn.Module = torch.compile(  # type: ignore
+        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
             model=self.net,
-            mode=config.mode,
-            fullgraph=config.fullgraph,
-            disable=config.disable_compilation,
+            mode=config.train.compile_mode,
+            fullgraph=config.train.compile_fullgraph,
+            disable=config.train.compile_disable,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -120,7 +77,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             self.log(f"train/{name}", epoch_metric)
             metric.reset()
 
-    def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
         return self._model_step(batch, mode="val")
 
     def on_validation_epoch_end(self) -> None:
@@ -134,8 +91,8 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
             self.net.parameters(),
-            lr=self.config.lr,
-            weight_decay=self.config.weight_decay,
+            lr=self.config.train.lr,
+            weight_decay=self.config.train.weight_decay,
         )
         # TODO scheduler (default in hls-os repo where linear decay with warmup)
         # total_steps = self.trainer.max_epochs * len(self.train_dataloader())
@@ -149,13 +106,12 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             "optimizer": optimizer,
         }
 
-    def _model_step(self, batch: Batch, mode: Mode) -> torch.Tensor:
+    def _model_step(self, batch: S2OSMSample, mode: Mode) -> torch.Tensor:
         x = batch.x
         y = batch.y
 
         logits = self.net(x)
 
-        print(logits.shape, y.shape)
         loss = self.loss_fn(logits, y)
 
         if self.trainer.sanity_checking:
@@ -168,65 +124,38 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         return loss
 
 
-def train() -> None:
-    # TODO these are initial / example values
-    model_config: ModelConfig = ModelConfig(
-        num_frames=(num_frames := 1),
-        embed_dim=(embed_dim := 768),
-        output_embed_dim=embed_dim * num_frames,
-        patch_height=14,
-        patch_width=14,
-        fcn_out_channels=256,
-        num_classess=7,  # todo
-    )
-    dataset_confg: S2OSMDatasetConfig = S2OSMDatasetConfig()
-    datamodule_config: S2OSMDatamoduleConfig = S2OSMDatamoduleConfig(
-        dataset_cfg=dataset_confg,
-        batch_size=8,
-        num_workers=1,
-        pin_memory=True,
-        use_transforms=True,
-        data_split=(0.8, 0.1, 0.1),
-        val_batch_size_multiplier=1,
-        # transforms
-        random_crop_size=224,
-    )
-    config: TrainConfig = TrainConfig(
-        model=model_config,
-        datamodule=datamodule_config,
-        project_name="PrithviFineTune",
-        lr=1.5e-05,
-        weight_decay=0.05,
-        betas=(0.9, 0.999),
-        float32_matmul_precision="medium",
-        mode="max-autotune",
-        fullgraph=True,
-        disable_compilation=True,
-        devices=1,
-        precision="bf16-mixed",
-        use_wandb_logger=False,
-        # model defaults (from crop classification cfg)
-    )
-
-    model: PrithviSegmentationFineTuner = PrithviSegmentationFineTuner(config)
-
-    datamodule: S2OSMDatamodule = S2OSMDatamodule(datamodule_config)
-
+def train(config: Config, trial: optuna.Trial | None = None) -> None:
+    model: PrithviSegmentationFineTuner = PrithviSegmentationFineTuner(config, optuna_trial=trial)
+    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule)
     callbacks: list[pl.Callback] = [
-        pl.callbacks.ModelCheckpoint(monitor="val/loss", mode="min", save_top_k=1, save_last=True, every_n_epochs=1),
-        pl.callbacks.LearningRateMonitor(logging_interval="step"),
+        pl.callbacks.ModelCheckpoint(
+            monitor="val/loss",
+            mode="min",
+            save_top_k=1,
+            save_last=True,
+            every_n_epochs=1,
+            dirpath=CKPT_DIR / config.train.project_name,
+        ),
         # pl.callbacks.BackboneFinetuning(), might be helpful?
     ]
-
-    logger: WandbLogger | None = WandbLogger() if config.use_wandb_logger else None
-
+    callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="step")] if config.train.use_wandb_logger else []
+    logger: WandbLogger | None = (
+        WandbLogger(  # todo use wandb key from env for team entity
+            project=config.train.project_name,
+            name=get_run_name(config.train.project_name),
+            log_model=False,  # no wandb artifacts
+            save_dir=LOG_DIR / "wandb" / config.train.project_name,
+        )
+        if config.train.use_wandb_logger
+        else False
+    )
     trainer: pl.Trainer = pl.Trainer(
+        default_root_dir=ROOT_DIR,
         callbacks=callbacks,
-        devices=config.devices,
-        precision=config.precision,
+        devices=config.train.devices,
+        precision=config.train.precision,
         logger=logger,
     )
-
     trainer.fit(model=model, datamodule=datamodule)
 
 
@@ -238,6 +167,25 @@ def objective(trial: optuna.Trial) -> float:
     ...
 
 
+def main() -> None:
+    configs: dict[str, Config] = {
+        "base": cfg.CONFIG,
+        "debug": cfg.DEBUG_CFG,
+        "tune": ...,
+    }
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", type=str, default="base", help=f"Supply config name. Default: base; Available: {list[configs]}"
+    )
+    args = parser.parse_args()
+    config: Config = configs[args.config or "base"]
+
+    if config == "tune":
+        tune()
+    else:
+        train(config=config)
+
+
 if __name__ == "__main__":
-    # tune()
-    train()
+    main()

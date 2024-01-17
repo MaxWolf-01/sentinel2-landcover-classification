@@ -6,7 +6,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.data.paths import SENTINEL_DIR, OSM_DIR
+from src.configs.paths import SENTINEL_DIR, OSM_DIR
 from src.utils import get_logger
 import albumentations as A
 import numpy.typing as npt
@@ -34,6 +34,7 @@ class S2OSMDataset(Dataset):
             f"There are different amounts of input data and labels:\n"
             f"Input Data:{self._sentinel_files}\nLabels: {self._osm_files}"
         )
+        assert len(self) > 0, "No data found. Did you run `download_data.py`?"
 
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
