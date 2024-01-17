@@ -16,7 +16,7 @@ from shapely.geometry import box
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from src.configs.label_mappings import LabelMap, OSMTagMap, GENERAL_MAP, OTHER_LABEL_ENTRY
+from src.configs.label_mappings import LabelMap, OSMTagMap, GENERAL_MAP
 from src.configs.paths import SENTINEL_DIR, OSM_DIR, ROOT_DIR
 from src.utils import load_pritvhi_bands
 
@@ -131,6 +131,9 @@ def _create_evalscript(bands: list[str]) -> str:
 
 
 def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> None:
+    pixel_size_x = (aoi.east - aoi.west) / RESOLUTION[0]
+    pixel_size_y = (aoi.north - aoi.south) / RESOLUTION[1]
+
     data = einops.rearrange(data, "h w c -> c h w")
     output_path = SENTINEL_DIR / f"{idx}.tif"
     with rasterio.open(
@@ -142,25 +145,25 @@ def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> Non
         count=len(BANDS),
         dtype=data.dtype,
         crs=rasterio.crs.CRS().from_epsg(code=CRS.value),
-        transform=rasterio.transform.from_origin(*aoi[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
+        transform=rasterio.transform.from_origin(aoi.west, aoi.north, pixel_size_x, pixel_size_y),
     ) as dst:
-        for i in range(len(BANDS)):
-            # Write each band separately | TODO why?
-            dst.write(data[i], i + 1)
+        dst.write(data)
 
 
 def fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
-    """Fetch individual labels -> concant to one -> put on top of aoi segment filled with 'other' label"""
+    """Fetch individual labels -> concant to one -> put on top of aoi segment filled with 'other' label
+    NOTE: If there are overlapping features, the last one will be used.
+    """
     gdf_list = [
         fetch_osm_data_by_tags(segment, tags=entry["osm_tags"], class_label=entry["idx"])
-        for entry in tag_mapping.values()
+        for entry in list(tag_mapping.values())[1:]  # skip "other" class
     ]
     osm_gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
     osm_gdf = osm_gdf.dropna(subset=["geometry"])
     osm_gdf.set_crs(str(CRS), inplace=True)
     osm_gdf.to_crs(str(CRS), inplace=True)
 
-    baseline_gdf = create_baseline_gdf(aoi=segment, resolution=RESOLUTION, other_cls_idx=OTHER_LABEL_ENTRY["idx"])
+    baseline_gdf = create_baseline_gdf(aoi=segment, resolution=RESOLUTION, other_cls_idx=tag_mapping["other"]["idx"])
     for idx, row in osm_gdf.iterrows():
         intersects = baseline_gdf.intersects(row["geometry"])
         baseline_gdf.loc[intersects, "class"] = row["class"]
@@ -236,10 +239,10 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
         dtype="uint8",
         crs=gdf.crs,
         transform=transform,
-    ) as dst:
+    ) as f:
         shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
         burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=0)
-        dst.write_band(1, burned)
+        f.write_band(1, burned)
 
 
 if __name__ == "__main__":
