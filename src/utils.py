@@ -33,17 +33,23 @@ def load_prithvi(
     return model
 
 
+def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)["train_params"]
+    return config["data_mean"], config["data_std"]
+
+
+def load_pritvhi_bands() -> list[str]:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)["train_params"]
+    return config["bands"]
+
+
 def get_run_name(project_name: str, prefix: str | None = None) -> str:
     short_uuid: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     if prefix is not None:
         return f"{project_name}_{prefix}_{short_uuid}"
     return f"{project_name}_{short_uuid}"
-
-
-def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
-    with PRITHVI_CONFIG.open("r") as f:
-        config = yaml.safe_load(f)["train_params"]
-    return config["data_mean"], config["data_std"]
 
 
 def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:

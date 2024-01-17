@@ -14,6 +14,22 @@ Download the pretrained weights of the Prithvi foundation model from Hugging Fac
 curl -L "https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M/resolve/main/Prithvi_100M.pt?download=true" -o "weights/Prithvi_100M.pt"
 ```
 
+Before you can run any scripts from the root dir, you will need to:
+```bash
+export PYTHONPATH="$PYTHONPATH:$(pwd)"
+```
+
+To download the training data, run:
+```bash
+python src/data/download_data.py  # specify area of interest via "--aoi". List available and default values via "--help"
+```
+
+Once that is done, run the training, eg.:
+```bash
+python src/train_simple_fintune.py  # specify config via "--config". List available and default values via "--help"
+```
+Configs like `debug` can be used to debug with a lower batch size, no logger, etc.
+
 ### Developer Infos
 
 Before commiting, make sure to 
@@ -22,6 +38,8 @@ pip install pre-commit
 pre-commit install
 ```
 Or run `pre-commit run --all-files` to check manually.
+
+
 
 ## Citations
 

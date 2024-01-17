@@ -23,11 +23,7 @@ Mode = Literal["train", "val", "test"]
 
 
 class PrithviSegmentationFineTuner(pl.LightningModule):
-    def __init__(
-        self,
-        config: Config,
-        optuna_trial: optuna.Trial | None = None,
-    ) -> None:
+    def __init__(self, config: Config, optuna_trial: optuna.Trial | None = None) -> None:
         super().__init__()
         self.config: Config = config
         # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
@@ -116,7 +112,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         logits = self.net(x)
 
-        print(logits.shape, y.shape)
         loss = self.loss_fn(logits, y)
 
         if self.trainer.sanity_checking:
@@ -173,15 +168,19 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="base", help="Supply config name. Default: base")
-    args = parser.parse_args()
-    config = args.config or "base"
-    config: Config = {
+    configs: dict[str, Config] = {
         "base": cfg.CONFIG,
         "debug": cfg.DEBUG_CFG,
         "tune": ...,
-    }[config]
+    }
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config", type=str, default="base", help=f"Supply config name. Default: base; Available: {list[configs]}"
+    )
+    args = parser.parse_args()
+    config: Config = configs[args.config or "base"]
+
     if config == "tune":
         tune()
     else:

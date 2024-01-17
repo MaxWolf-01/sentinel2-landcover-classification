@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import typing
@@ -17,6 +18,7 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 
 from src.configs.paths import CONFIG_DIR, SENTINEL_DIR, OSM_DIR, ROOT_DIR
+from src.utils import load_pritvhi_bands
 
 
 class BBox(typing.NamedTuple):
@@ -26,19 +28,21 @@ class BBox(typing.NamedTuple):
     west: float
 
 
-# AUSTRIA_BBOX = ...
-VIENNA_BBOX: BBox = BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188)
-AOI: BBox = VIENNA_BBOX
+AOIs: dict[str, BBox] = {
+    "VIE": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
+    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # ca. 150 tifs;VIE,NÖ,OÖ,NBGLD,Graz
+    "AT": ...,
+}
 
 DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # TODO is this the correct one?
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
-BANDS: tuple[str, ...] = ("B02", "B03", "B04", "B05", "B06", "B07")
+BANDS: list[str] = load_pritvhi_bands()
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
 TAG_MAPPING_PATH: Path = CONFIG_DIR / "tag_mapping.json"
 
-# todo what is the difference to tag mapping?
+# todo what is the difference to tag mapping? (I think FEATURE_TAGS should be deleted and built from tag_mapping.json!)
 # TODO set proper tags
 FEATURE_TAGS = {  # class labels are indices in this dict (starting at 1)
     "building": ["yes", "residential", "commercial", "industrial"],
@@ -49,7 +53,7 @@ FEATURE_TAGS = {  # class labels are indices in this dict (starting at 1)
 }
 
 
-def _create_evalscript(bands: tuple[str, ...]) -> str:
+def _create_evalscript(bands: list[str]) -> str:
     bands_str = ", ".join([f'"{band}"' for band in bands])
     return f"""
     //VERSION=3
@@ -118,9 +122,9 @@ def standardize_osm_tags(gdf: gpd.GeoDataFrame, tag_mapping: dict[str, str]) -> 
     return gdf
 
 
-def fetch_sentinel_data(aoi_bbox: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
+def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
     evalscript = _create_evalscript(BANDS)
-    bbox: sh.BBox = sh.BBox((aoi_bbox.west, aoi_bbox.south, aoi_bbox.east, aoi_bbox.north), crs=sh.CRS.WGS84)
+    bbox: sh.BBox = sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=sh.CRS.WGS84)
     request = sh.SentinelHubRequest(
         evalscript=evalscript,
         input_data=[sh.SentinelHubRequest.input_data(data_collection=DATA_COLLECTION, time_interval=TIME_INTERVAL)],
@@ -133,7 +137,7 @@ def fetch_sentinel_data(aoi_bbox: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
     return request.get_data(save_data=False)[0]
 
 
-def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int) -> None:
+def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> None:
     data = einops.rearrange(data, "h w c -> c h w")
     output_path = SENTINEL_DIR / f"{idx}.tif"
     with rasterio.open(
@@ -145,7 +149,7 @@ def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int) -> None:
         count=len(BANDS),
         dtype=data.dtype,
         crs="+proj=latlong",  # TODO is this correct?
-        transform=rasterio.transform.from_origin(*AOI[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
+        transform=rasterio.transform.from_origin(*aoi[:2], RESOLUTION[0], RESOLUTION[1]),  # TODO is this correct?
     ) as dst:
         for i in range(len(BANDS)):
             # Write each band separately | TODO why?
@@ -189,6 +193,11 @@ def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, idx: int) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--aoi", type=str, default="VIE", help=f"Supply an AOI. Default: VIE. Available:{list(AOIs)}")
+    args = parser.parse_args()
+    aoi = args.aoi or "VIE"
+
     ox.config(use_cache=True, cache_folder=ROOT_DIR / "osmnx_cache")
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
@@ -198,10 +207,10 @@ def main() -> None:
     SENTINEL_DIR.mkdir(exist_ok=True, parents=True)
     OSM_DIR.mkdir(exist_ok=True, parents=True)
 
-    segments: list[BBox] = calculate_segments(AOI, SEGMENT_SIZE)
+    segments: list[BBox] = calculate_segments(AOIs[aoi], SEGMENT_SIZE)
     for idx, segment in enumerate(tqdm(segments)):
-        sentinel_data: npt.NDArray = fetch_sentinel_data(aoi_bbox=segment, sh_config=config)
-        save_sentinel_data_as_geotiff(sentinel_data, idx=idx)
+        sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=config)
+        save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=aoi)
         osm_data = fetch_osm_data(segment, tag_mapping=tag_mapping)
         save_rasterized_osm_data(osm_data, idx=idx)
 
