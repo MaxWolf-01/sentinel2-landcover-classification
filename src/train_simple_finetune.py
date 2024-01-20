@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import os
 import pprint
 from typing import Any, Literal
 
+import dotenv
 import lightning.pytorch as pl
 import optuna
 import torch
@@ -171,6 +174,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
     callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="step")] if config.train.use_wandb_logger else []
     logger: WandbLogger | None = (
         WandbLogger(  # todo use wandb key from env for team entity
+            entity=config.train.wandb_entity,
             project=config.train.project_name,
             name=config.train.run_name,
             log_model=False,  # no wandb artifacts
@@ -198,6 +202,7 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main() -> None:
+    dotenv.load_dotenv()
     configs: dict[str, Config] = {
         "base": cfg.CONFIG,
         "debug": cfg.DEBUG_CFG,
@@ -212,10 +217,11 @@ def main() -> None:
     cfg_key: str = args.config or "base"
     config: Config = configs[cfg_key]
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
+    config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+
+    script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
+
     pl.seed_everything(config.train.seed)  # after creating run_name
-
-    script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(config)}")
-
     if config == "tune":
         tune()
     else:
