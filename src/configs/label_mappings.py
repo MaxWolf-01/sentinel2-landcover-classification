@@ -11,6 +11,11 @@ class LabelEntry(typing.TypedDict):
 
 LabelMap = dict[str, LabelEntry]
 
+
+def get_idx_to_label_map(label_map: LabelMap) -> dict[int, str]:
+    return {entry["idx"]: label for label, entry in label_map.items()}
+
+
 # class labels as in Multiclass Semantic Segmentation with Very High-Resolution Satellite Images | doi:10.2760/46796
 # OSM mapping might differ from the one used in the paper (todo maybe authors can share this detail actually?)
 GENERAL_MAP: LabelMap = {

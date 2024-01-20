@@ -28,7 +28,7 @@ def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap) -> N
     ax[1].axis("off")
 
 
-def load_senintel_tiff_for_plotting(file: Path, scale_percentile_threshold: float = 99.95) -> npt.NDArray:
+def load_senintel_tiff_for_plotting(file: Path, scale_percentile_threshold: float = 98) -> npt.NDArray:
     """Loads and scales a sentinel tiff image for plotting
     Args:
         file (Path): Path to the sentinel tiff image
@@ -39,12 +39,9 @@ def load_senintel_tiff_for_plotting(file: Path, scale_percentile_threshold: floa
     """
     with rasterio.open(file) as f:
         image = f.read([3, 2, 1])  # B3=B, B2=G, B3=R
-    image = image.astype(float)
-    max_val = np.percentile(image, q=scale_percentile_threshold)
-    image = (image / max_val) * 255
-    image[image > 255] = 255
-    image = image.astype(np.uint8)
-    image = einops.rearrange(image, "c h w -> h w c")
+    p2, p98 = np.percentile(image, q=(100 - scale_percentile_threshold, scale_percentile_threshold))
+    image = np.clip((image - p2) / (p98 - p2) * 255, a_min=0, a_max=255).astype(np.uint8)
+    image = einops.rearrange(image, "rgb h w -> h w rgb")
     return image
 
 

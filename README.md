@@ -29,6 +29,7 @@ Once that is done, run the training, eg.:
 python src/train_simple_fintune.py  # specify config via "--config". List available and default values via "--help"
 ```
 Configs like `debug` can be used to debug with a lower batch size, no logger, etc.
+Give the run name a prefix via `--name` to make it easier to find in the logs / wandb.
 
 ### Developer Infos
 

@@ -1,23 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import pprint
 from typing import Any, Literal
 
 import lightning.pytorch as pl
 import optuna
 import torch
 import torchmetrics
+import wandb
+from PIL import Image
 from lightning.pytorch.loggers import WandbLogger
 
 from torch import nn
 
+from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from plotting import load_senintel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
 from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample
+from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.simple_finetune as cfg
-from src.utils import get_run_name
+from src.utils import get_run_name, get_logger
+
+script_logger = get_logger(__name__)
 
 Mode = Literal["train", "val", "test"]
 
@@ -54,7 +61,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
-        # TODO, for debugging and monitoring: log images; log prediction of a fixed bbox over time; log attention maps, plot confusion matrix
+        # TODO for debugging and monitoring: log attention maps, plot confusion matrix
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
@@ -88,6 +95,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             self.log(f"val/{name}", epoch_metric)
             metric.reset()
 
+        if isinstance(self.logger, WandbLogger):
+            log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
+
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
             self.net.parameters(),
@@ -119,9 +129,28 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         self.log(f"{mode}/loss", loss)
 
-        # TODO calculate and log metrics
+        if not isinstance(self.logger, WandbLogger):
+            return loss
 
         return loss
+
+
+def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str], idx: int = 0) -> None:
+    val_ds: S2OSMDataset = model.trainer.val_dataloaders.dataset
+    sample: S2OSMSample = val_ds[idx]
+    inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
+    with torch.no_grad():
+        pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
+    orig_img = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0])
+    orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
+    orig_img = Image.fromarray(orig_img, mode="RGB")
+    labels = sample.y.cpu().numpy()
+    # TODO are colors customizable?
+    masks = {
+        "predictions": {"mask_data": pred, "class_labels": class_labels},
+        "labels": {"mask_data": labels, "class_labels": class_labels},
+    }
+    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks)})
 
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
@@ -135,6 +164,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
             save_last=True,
             every_n_epochs=1,
             dirpath=CKPT_DIR / config.train.project_name,
+            filename=config.train.run_name + "_{epoch:02d}_{val/loss:.2f}_{step}",
         ),
         # pl.callbacks.BackboneFinetuning(), might be helpful?
     ]
@@ -142,7 +172,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
     logger: WandbLogger | None = (
         WandbLogger(  # todo use wandb key from env for team entity
             project=config.train.project_name,
-            name=get_run_name(config.train.project_name),
+            name=config.train.run_name,
             log_model=False,  # no wandb artifacts
             save_dir=LOG_DIR / "wandb" / config.train.project_name,
         )
@@ -173,13 +203,18 @@ def main() -> None:
         "debug": cfg.DEBUG_CFG,
         "tune": ...,
     }
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", type=str, default="base", help=f"Supply config name. Default: base; Available: {list[configs]}"
+        "--config", type=str, default="base", help=f"Specify config. Default: base; Available: {list[configs]}"
     )
+    parser.add_argument("--name", type=str, default=None, help="Specify run name prefix. Default: None")
     args = parser.parse_args()
-    config: Config = configs[args.config or "base"]
+    cfg_key: str = args.config or "base"
+    config: Config = configs[cfg_key]
+    config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
+    pl.seed_everything(config.train.seed)  # after creating run_name
+
+    script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(config)}")
 
     if config == "tune":
         tune()
