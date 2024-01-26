@@ -28,22 +28,23 @@ class S2OSMDataset(Dataset):
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
         self.transform: A.Compose | None = None  # to be set in the datamodule TODO why? can we remove this hack?
-        self._sentinel_files = list(SENTINEL_DIR.glob("*.tif"))
-        self._osm_files = list(OSM_DIR.glob("*.tif"))
-        assert len(self._sentinel_files) == len(self._osm_files), (
+        self.sentinel_files = list(SENTINEL_DIR.glob("*.tif"))
+        self.osm_files = list(OSM_DIR.glob("*.tif"))
+        assert len(self.sentinel_files) == len(self.osm_files), (
             f"There are different amounts of input data and labels:\n"
-            f"Input Data:{self._sentinel_files}\nLabels: {self._osm_files}"
+            f"Input Data:{self.sentinel_files}\nLabels: {self.osm_files}"
         )
+        assert len(self) > 0, "No data found. Did you run `download_data.py`?"
 
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
     def __len__(self) -> int:
-        return len(self._sentinel_files)
+        return len(self.sentinel_files)
 
     def __getitem__(self, idx: int) -> S2OSMSample:
-        with rasterio.open(self._sentinel_files[idx]) as f:
+        with rasterio.open(self.sentinel_files[idx]) as f:
             sentinel_data: npt.NDArray = f.read()
-        with rasterio.open(self._osm_files[idx]) as f:
+        with rasterio.open(self.osm_files[idx]) as f:
             osm_data: npt.NDArray = f.read(1)  # read first band
 
         if self.transform is not None:
@@ -57,23 +58,3 @@ class S2OSMDataset(Dataset):
         osm_tensor = torch.from_numpy(osm_data).long()
 
         return S2OSMSample(x=sentinel_tensor, y=osm_tensor)
-
-
-if __name__ == "__main__":
-
-    def t() -> None:
-        from src.utils import load_prithvi
-
-        ds = S2OSMDataset(S2OSMDatasetConfig())
-        model = load_prithvi(num_frames=1)
-        x = ds[0].x  # (1, 1, 3, 512, 512)
-        # TODO don't forget target needs to be cropped to the same location as the input as well
-        print("Original Data: ", x.shape, " Target: ", ds[0].y.shape)
-        # TODO remove this after data is loaded with the necessary 6 bands...
-        x = einops.rearrange(x, "b t c h w  -> b c t h w")
-        x = x[:, :, :, :224, :224]  # "random crop"
-        print("Pritvhi Input:  ", x.shape)
-        features, _, _ = model.forward_encoder(x, mask_ratio=0)
-        print("Pritvhi Output: ", features.shape)
-
-    t()

@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 import lightning.pytorch as pl
 import torch
-from torch.utils.data import Subset
 import albumentations as A
 
 from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
@@ -44,9 +43,9 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
 
-        self.train: Subset[S2OSMDataset] | None = None
-        self.val: Subset[S2OSMDataset] | None = None
-        self.test: Subset[S2OSMDataset] | None = None
+        self.train: S2OSMDataset | None = None
+        self.val: S2OSMDataset | None = None
+        self.test: S2OSMDataset | None = None
 
         self.val_batch_size_multiplier: int = cfg.val_batch_size_multiplier
         self.dataloader_partial = functools.partial(
@@ -69,11 +68,11 @@ class S2OSMDatamodule(pl.LightningDataModule):
         val_indices: list[int] = all_indicies[train_len : train_len + val_len]
         test_indices: list[int] = all_indicies[train_len + val_len :]
 
-        self.train: S2OSMDataset = copy.deepcopy(dataset)
+        self.train = copy.deepcopy(dataset)
         self.train.indices = train_indices
-        self.val: S2OSMDataset = copy.deepcopy(dataset)
+        self.val = copy.deepcopy(dataset)
         self.val.indices = val_indices
-        self.test: S2OSMDataset = copy.deepcopy(dataset)
+        self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
         logger.info(f"Datamodule setup with {train_len} train, {val_len} val and {test_len} test samples.")
