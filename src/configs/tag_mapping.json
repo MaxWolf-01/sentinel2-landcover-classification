@@ -1,15 +1,22 @@
+
 {
-    "waterway": "water",
-    "landuse:reservoir": "water",
-    "natural:water": "water",
-    "highway:primary": "road",
-    "highway:secondary": "road",
-    "highway:tertiary": "road",
-    "highway:residential": "road",
-    "highway:service": "road",
-    "landuse:grass": "green_space",
-    "landuse:meadow": "green_space",
-    "natural:tree": "green_space",
-    "natural:wood": "green_space",
-    "landuse:forest": "green_space"
+    "water": {
+        "natural": ["water", "wetland", "waterfall"],
+        "waterway": ["river", "stream", "canal", "drain", "ditch"]
+    },
+    "sealed": {
+        "highway": ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "service"],
+        "building": ["yes", "commercial", "industrial", "residential"],
+        "landuse": ["industrial", "commercial", "residential", "retail"],
+        "aeroway": ["aerodrome"],
+        "amenity": ["parking"]
+    },
+    "green_space": {
+        "landuse": ["forest", "grass", "recreation_ground", "village_green", "meadow", "forestry"],
+        "natural": ["wood", "scrub", "beach", "natural_protection", "tree"],
+        "leisure": ["park", "garden"]
+    },
+    "agriculture": {
+        "landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural"]
+    }
 }
