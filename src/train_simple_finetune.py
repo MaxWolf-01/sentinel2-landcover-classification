@@ -28,7 +28,7 @@ from src.data.s2osmdatamodule import S2OSMDatamodule
 from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.simple_finetune as cfg
-from utils import get_run_name, get_logger
+from src.utils import get_run_name, get_logger
 
 script_logger = get_logger(__name__)
 
@@ -68,7 +68,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             },
         }
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
         self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
@@ -182,7 +181,7 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
     wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks)})
 
 
-def log_confusion_matrix(conf_matrix, class_labels):
+def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
     fig, ax = plt.subplots(figsize=(10, 8))
     cax = ax.matshow(conf_matrix, cmap='Blues', norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
     fig.colorbar(cax)
@@ -272,7 +271,7 @@ def main() -> None:
     cfg_key: str = args.config or "base"
     config: Config = configs[cfg_key]
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
-    config.train.wandb_entity = "luisk1"#os.getenv("WANDB_ENTITY")
+    config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
