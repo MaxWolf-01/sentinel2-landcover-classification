@@ -27,6 +27,13 @@ class BBox(typing.NamedTuple):
     east: float
     west: float
 
+    def __str__(self, p: int | None = None) -> str:
+        f = f"{{:.{p}f}}" if p is not None else "{}"
+        return (
+            f"(N: {f.format(self.north)}, S: {f.format(self.south)},"
+            f" E: {f.format(self.east)}, W: {f.format(self.west)})"
+        )
+
 
 AOIs: dict[str, BBox] = {
     "VIE": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop

@@ -12,7 +12,6 @@ import optuna
 import torch
 import torchmetrics
 import wandb
-from PIL import Image
 from lightning.pytorch.loggers import WandbLogger
 
 from torch import nn
@@ -144,16 +143,15 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0])
+    orig_img, bbox = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
     orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
-    orig_img = Image.fromarray(orig_img, mode="RGB")
     labels = sample.y.cpu().numpy()
-    # TODO are colors customizable?
+    # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
     masks = {
         "predictions": {"mask_data": pred, "class_labels": class_labels},
         "labels": {"mask_data": labels, "class_labels": class_labels},
     }
-    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks)})
+    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks, caption=f"{bbox}")})
 
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
