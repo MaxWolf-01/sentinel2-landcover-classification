@@ -7,6 +7,7 @@ import pprint
 from typing import Any, Literal
 
 import dotenv
+import numpy as np
 import lightning.pytorch as pl
 import optuna
 import torch
@@ -14,18 +15,20 @@ import torchmetrics
 import wandb
 from PIL import Image
 from lightning.pytorch.loggers import WandbLogger
-
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from torchmetrics.classification import MulticlassConfusionMatrix
 from torch import nn
 
 from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
 from plotting import load_senintel_tiff_for_plotting
-from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
-from src.configs.simple_finetune import Config
-from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
-from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
-import src.configs.simple_finetune as cfg
-from src.utils import get_run_name, get_logger
+from configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
+from configs.simple_finetune import Config
+from data.s2osmdatamodule import S2OSMDatamodule
+from data.s2osmdataset import S2OSMSample, S2OSMDataset
+from modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
+import configs.simple_finetune as cfg
+from utils import get_run_name, get_logger
 
 script_logger = get_logger(__name__)
 
@@ -50,11 +53,10 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             head=FCNHead(
                 in_channels=config.model.output_embed_dim,
                 out_channels=config.model.fcn_out_channels,
-                num_classes=config.model.num_classess,
+                num_classes=config.model.num_classes,
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
-
         # TODO mIoU
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             "train": {
@@ -64,16 +66,19 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
-        # TODO for debugging and monitoring: log attention maps, plot confusion matrix
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.metrics["val"]["confusion_matrix"] = MulticlassConfusionMatrix(num_classes=config.model.num_classes).to(
+            device)  # TODO Not hardcoded cuda
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-            model=self.net,
-            mode=config.train.compile_mode,
-            fullgraph=config.train.compile_fullgraph,
-            disable=config.train.compile_disable,
-        )
+    #     self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+    #         model=self.net,
+    #         mode=config.train.compile_mode,
+    #         fullgraph=config.train.compile_fullgraph,
+    #         disable=config.train.compile_disable,
+    #     )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -88,18 +93,22 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             metric.reset()
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
+        logits = self(batch.x)
+        predictions = torch.argmax(logits, dim=1)
+        labels = batch.y.to(predictions.device)
+        self.metrics["val"]["confusion_matrix"].update(predictions, labels)
+
         return self._model_step(batch, mode="val")
 
     def on_validation_epoch_end(self) -> None:
         if self.trainer.sanity_checking:
             return
-        for name, metric in self.metrics["val"].items():
-            epoch_metric = metric.compute()
-            self.log(f"val/{name}", epoch_metric)
-            metric.reset()
+
+        conf_matrix = self.metrics["val"]["confusion_matrix"].compute().cpu().numpy()
 
         if isinstance(self.logger, WandbLogger):
             log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
+            log_confusion_matrix(conf_matrix, get_idx_to_label_map(GENERAL_MAP))
 
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
@@ -154,6 +163,35 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
         "labels": {"mask_data": labels, "class_labels": class_labels},
     }
     wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks)})
+
+
+def log_confusion_matrix(conf_matrix, class_labels):
+    fig, ax = plt.subplots(figsize=(10, 8))
+    cax = ax.matshow(conf_matrix, cmap='Blues', norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
+    fig.colorbar(cax)
+
+    ax.set_title('Confusion Matrix', pad=20)
+    ax.set_xlabel('Predicted Labels')
+    ax.set_ylabel('True Labels')
+    label_names = list(class_labels.values())
+
+    ax.set_xticks(np.arange(len(label_names)))
+    ax.set_yticks(np.arange(len(label_names)))
+    ax.set_xticklabels(label_names)
+    ax.set_yticklabels(label_names)
+    plt.xticks(rotation=45)
+
+    for i in range(len(conf_matrix)):
+        for j in range(len(conf_matrix[i])):
+            ax.text(j, i, str(conf_matrix[i, j]), ha='center', va='center', color='black')
+    fig.canvas.draw()
+
+    image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))  # Adjust for RGBA
+    image = Image.fromarray(image[..., :3])  # Convert to RGB
+
+    wandb.log({"confusion_matrix": wandb.Image(image)})
+    plt.close(fig)
 
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:

@@ -22,7 +22,7 @@ class ModelConfig:
     patch_height: int
     patch_width: int
     fcn_out_channels: int
-    num_classess: int
+    num_classes: int
 
 
 @dataclass
@@ -62,7 +62,7 @@ CONFIG = Config(
         patch_height=14,
         patch_width=14,
         fcn_out_channels=256,
-        num_classess=7,  # todo
+        num_classes=4,  # todo
     ),
     datamodule=S2OSMDatamoduleConfig(
         dataset_cfg=S2OSMDatasetConfig(),
@@ -76,7 +76,7 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="simple-prithvi-finetune",
+        project_name="simple-finetune-prithvi2.0",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
