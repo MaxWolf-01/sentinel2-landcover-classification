@@ -142,7 +142,7 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
     val_ds: S2OSMDataset = model.trainer.val_dataloaders.dataset
     sample: S2OSMSample = val_ds[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
-    with torch.no_grad():
+    with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
     orig_img = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0])
     orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
