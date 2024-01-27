@@ -30,8 +30,8 @@ class BBox(typing.NamedTuple):
 
 AOIs: dict[str, BBox] = {
     "VIE": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
-    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # ca. 150 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    # "AT": ...,
+    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
+    "AT": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
 }
 
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
@@ -53,9 +53,11 @@ def main() -> None:
     parser.add_argument(
         "--labels", type=str, default="general", help="Specify a label mapping to use. Default: general."
     )
+    parser.add_argument("--workers", type=int, default=4, help="Specify the number of workers. Default: 8")
     args = parser.parse_args()
-    aoi = AOIs[args.aoi or "VIE"]
-    label_map = LABEL_MAPPINGS[args.labels or "general"]
+    aoi = AOIs[args.aoi]
+    label_map = LABEL_MAPPINGS[args.labels]
+    max_workers = args.workers
 
     ox.config(use_cache=True, cache_folder=ROOT_DIR / "osmnx_cache")
 
@@ -67,7 +69,7 @@ def main() -> None:
 
     segments: list[BBox] = calculate_segments(aoi, SEGMENT_SIZE)
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_to_segment = {
             executor.submit(process_segment, segment, idx, label_map, config): (idx, segment)
             for idx, segment in enumerate(segments)
@@ -78,6 +80,11 @@ def main() -> None:
                 future.result()
             except Exception as exc:
                 print(f"Segment {idx} generated an exception: {exc}")
+                if "terminated abruptly" in str(exc):
+                    print(
+                        "You might have run out of RAM. "
+                        "Try lowering the number of workers via the --workers argument."
+                    )
 
 
 def process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig) -> None:
