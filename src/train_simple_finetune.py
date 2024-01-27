@@ -20,14 +20,14 @@ from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torch import nn
 
-from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
-from plotting import load_senintel_tiff_for_plotting
-from configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
-from configs.simple_finetune import Config
-from data.s2osmdatamodule import S2OSMDatamodule
-from data.s2osmdataset import S2OSMSample, S2OSMDataset
-from modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
-import configs.simple_finetune as cfg
+from src.configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from src.plotting import load_senintel_tiff_for_plotting
+from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
+from src.configs.simple_finetune import Config
+from src.data.s2osmdatamodule import S2OSMDatamodule
+from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
+from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
+import src.configs.simple_finetune as cfg
 from utils import get_run_name, get_logger
 
 script_logger = get_logger(__name__)
@@ -63,22 +63,29 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
+                     "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.metrics["val"]["confusion_matrix"] = MulticlassConfusionMatrix(num_classes=config.model.num_classes).to(
-            device)  # TODO Not hardcoded cuda
-
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-    #     self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-    #         model=self.net,
-    #         mode=config.train.compile_mode,
-    #         fullgraph=config.train.compile_fullgraph,
-    #         disable=config.train.compile_disable,
-    #     )
+        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+             model=self.net,
+             mode=config.train.compile_mode,
+             fullgraph=config.train.compile_fullgraph,
+             disable=config.train.compile_disable,
+         )
+
+    def on_fit_start(self) -> None:
+        """
+        This hook is called at the very beginning of the fit process.
+        It is used  to move all metrics to the appropriate device.
+        """
+        for mode_metrics in self.metrics.values():
+            for metric in mode_metrics.values():
+                metric.to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -93,10 +100,13 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             metric.reset()
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
+
         logits = self(batch.x)
         predictions = torch.argmax(logits, dim=1)
-        labels = batch.y.to(predictions.device)
-        self.metrics["val"]["confusion_matrix"].update(predictions, labels)
+        labels = batch.y
+
+        for name, metric in self.metrics["val"].items():
+            metric.update(predictions, labels)
 
         return self._model_step(batch, mode="val")
 
@@ -104,11 +114,18 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         if self.trainer.sanity_checking:
             return
 
-        conf_matrix = self.metrics["val"]["confusion_matrix"].compute().cpu().numpy()
+        computed_metrics = {}
+        for metric_name, metric in self.metrics["val"].items():
+            computed_value = metric.compute()
+            computed_metrics[metric_name] = computed_value.cpu().numpy()
+
+            if computed_value.numel() == 1:
+                self.log(f"val/{metric_name}", computed_value)
+            metric.reset()
 
         if isinstance(self.logger, WandbLogger):
             log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
-            log_confusion_matrix(conf_matrix, get_idx_to_label_map(GENERAL_MAP))
+            log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
 
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
@@ -255,7 +272,7 @@ def main() -> None:
     cfg_key: str = args.config or "base"
     config: Config = configs[cfg_key]
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
-    config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+    config.train.wandb_entity = "luisk1"#os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 

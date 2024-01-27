@@ -76,7 +76,7 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="simple-finetune-prithvi2.0",
+        project_name="simple-prithvi-finetune",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),

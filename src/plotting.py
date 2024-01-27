@@ -6,10 +6,10 @@ from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from configs.label_mappings import LabelMap, GENERAL_MAP
+from src.configs.label_mappings import LabelMap, GENERAL_MAP
 import numpy.typing as npt
 
-from configs.paths import SENTINEL_DIR, OSM_DIR
+from src.configs.paths import SENTINEL_DIR, OSM_DIR
 
 
 def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap) -> None:
