@@ -1,4 +1,5 @@
 import argparse
+import concurrent
 import os
 import typing
 
@@ -12,8 +13,8 @@ from rasterio.transform import from_origin
 import sentinelhub as sh
 import geopandas as gpd
 import numpy.typing as npt
-from tqdm import tqdm
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 from src.configs.label_mappings import LabelMap, OSMTagMap, GENERAL_MAP
 from src.configs.paths import SENTINEL_DIR, OSM_DIR, ROOT_DIR
@@ -65,11 +66,25 @@ def main() -> None:
     OSM_DIR.mkdir(exist_ok=True, parents=True)
 
     segments: list[BBox] = calculate_segments(aoi, SEGMENT_SIZE)
-    for idx, segment in enumerate(tqdm(segments)):
-        sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=config)
-        save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=aoi)
-        osm_data = fetch_osm_data(segment, tag_mapping=label_map)
-        save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=label_map["other"]["idx"])
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        future_to_segment = {
+            executor.submit(process_segment, segment, idx, label_map, config): (idx, segment)
+            for idx, segment in enumerate(segments)
+        }
+        for future in tqdm(concurrent.futures.as_completed(future_to_segment), total=len(future_to_segment)):
+            idx, segment = future_to_segment[future]
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"Segment {idx} generated an exception: {exc}")
+
+
+def process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig) -> None:
+    sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=sh_config)
+    save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment)
+    osm_data = fetch_osm_data(segment, tag_mapping=label_map)
+    save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=label_map["other"]["idx"])
 
 
 def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
