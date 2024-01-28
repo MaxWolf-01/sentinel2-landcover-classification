@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import os
 import pprint
 from typing import Any, Literal
 
@@ -14,8 +13,6 @@ import torch
 import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torchmetrics import JaccardIndex as IoU
 from torch import nn
@@ -64,20 +61,20 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
-                     "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
-                     "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
+                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+                "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-#        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
- #            model=self.net,
-  #           mode=config.train.compile_mode,
-   #          fullgraph=config.train.compile_fullgraph,
+    #        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+    #            model=self.net,
+    #           mode=config.train.compile_mode,
+    #          fullgraph=config.train.compile_fullgraph,
     #         disable=config.train.compile_disable,
-     #    )
+    #    )
 
     def on_fit_start(self) -> None:
         """
@@ -128,7 +125,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             computed_value = metric.compute()
             computed_metrics[metric_name] = computed_value.cpu().numpy()
 
-            if metric_name == 'iou':
+            if metric_name == "iou":
                 # TODO: Correct
                 self.log(f"val/{metric_name}", computed_value, on_step=False, on_epoch=True)
 
@@ -299,7 +296,7 @@ def main() -> None:
     config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
     config.train.tags.extend(args.tags or [])
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
-    config.train.wandb_entity = "luisk1"# os.getenv("WANDB_ENTITY")
+    config.train.wandb_entity = "luisk1"  # os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
