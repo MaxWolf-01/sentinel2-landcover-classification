@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+import torch
 from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
@@ -13,25 +14,52 @@ import numpy.typing as npt
 from src.configs.paths import SENTINEL_DIR, OSM_DIR
 
 
-def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int) -> None:
-    sentinel_img, sentinel_bbox = load_senintel_tiff_for_plotting(sentinel, return_bbox=True)
+def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
+    """Plots Sentinel image and mask side by side."""
+    sentinel_img, sentinel_bbox = load_sentinel_tiff_for_plotting(sentinel, return_bbox=True)
     mask_img = load_mask_tiff_for_plotting(mask)
-    cmap = get_color_map(label_map)
-
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-
-    ax[0].imshow(mask_img, cmap=cmap)
-    ax[0].set_title("Mask")
-    ax[0].axis("off")
-
-    ax[1].imshow(sentinel_img)
-    ax[1].set_title("Sentinel Image")
-    ax[1].axis("off")
-
-    fig.suptitle(f"BBOX: {sentinel_bbox.__str__(p=p)}", fontsize=14, y=0.95)
+    plot_images([mask_img, sentinel_img], ["Mask", "Sentinel Image"], sentinel_bbox, label_map, p)
 
 
-def load_senintel_tiff_for_plotting(
+def plot_sentinel_mask_and_pred(
+    sentinel: Path, mask: Path, pred_img: npt.NDArray, label_map: LabelMap, p: int | None = None
+) -> None:
+    """Plots Sentinel image, mask, and prediction side by side."""
+    sentinel_img, sentinel_bbox = load_sentinel_tiff_for_plotting(sentinel, return_bbox=True)
+    mask_img = load_mask_tiff_for_plotting(mask)
+    plot_images(
+        [mask_img, pred_img, sentinel_img], ["Mask", "Prediction", "Sentinel Image"], sentinel_bbox, label_map, p
+    )
+
+
+def plot_images(
+    images: list[npt.NDArray],
+    titles: list[str],
+    bbox: BBox | None = None,
+    cmap: ListedColormap | LabelMap | None = None,
+    p: int | None = None,
+) -> None:
+    """Plots a list of images with their respective titles.
+    Args:
+        images (List[npt.NDArray]): List of images to be plotted.
+        titles (List[str]): Titles for the images.
+        bbox (Optional[BBox]): Bounding box information.
+        cmap (Optional[ListedColormap]): Color map for images.
+        p (Optional[int]): Precision for displaying bbox coordinates.
+    """
+    cmap = get_color_map(cmap) if isinstance(cmap, dict) else cmap
+    num_images = len(images)
+    fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
+    for i, (img, title) in enumerate(zip(images, titles)):
+        ax[i].imshow(img, cmap=cmap)
+        ax[i].set_title(title)
+        ax[i].axis("off")
+
+    if bbox:
+        fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
+
+
+def load_sentinel_tiff_for_plotting(
     file: Path, scale_percentile_threshold: float = 98, return_bbox: bool = False
 ) -> npt.NDArray | tuple[npt.NDArray, BBox]:
     """Loads and scales a sentinel tiff image for plotting
@@ -68,6 +96,10 @@ def load_mask_tiff_for_plotting(file: Path) -> npt.NDArray:
     return image
 
 
+def load_pred_batch_for_plotting(file: Path) -> list[npt.NDArray]:
+    return [pred for pred in torch.load(file).argmax(dim=1).cpu().numpy()]  # (B, H, W)
+
+
 def get_color_map(label_map: LabelMap) -> ListedColormap:
     """Creates a color map for the given label map
     Args:
@@ -84,7 +116,7 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
     return cmap
 
 
-def _example(n: int, p: int) -> None:
+def _inspect_mask(n: int, p: int) -> None:
     s = SENTINEL_DIR / f"{n}.tif"
     o = OSM_DIR / f"{n}.tif"
     plot_sentinel_and_mask(sentinel=s, mask=o, label_map=GENERAL_MAP, p=p)
@@ -99,4 +131,4 @@ if __name__ == "__main__":
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
 
-    _example(n=args.n, p=args.p)
+    _inspect_mask(n=args.n, p=args.p)
