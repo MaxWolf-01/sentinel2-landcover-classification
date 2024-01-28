@@ -63,7 +63,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
-                     "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
+                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
@@ -71,11 +71,11 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
         self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-             model=self.net,
-             mode=config.train.compile_mode,
-             fullgraph=config.train.compile_fullgraph,
-             disable=config.train.compile_disable,
-         )
+            model=self.net,
+            mode=config.train.compile_mode,
+            fullgraph=config.train.compile_fullgraph,
+            disable=config.train.compile_disable,
+        )
 
     def on_fit_start(self) -> None:
         """
@@ -99,7 +99,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             metric.reset()
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
-
         logits = self(batch.x)
         predictions = torch.argmax(logits, dim=1)
         labels = batch.y
@@ -188,12 +187,12 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
 
 def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(conf_matrix, cmap='Blues', norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
+    cax = ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
     fig.colorbar(cax)
 
-    ax.set_title('Confusion Matrix', pad=20)
-    ax.set_xlabel('Predicted Labels')
-    ax.set_ylabel('True Labels')
+    ax.set_title("Confusion Matrix", pad=20)
+    ax.set_xlabel("Predicted Labels")
+    ax.set_ylabel("True Labels")
     label_names = list(class_labels.values())
 
     ax.set_xticks(np.arange(len(label_names)))
@@ -204,7 +203,7 @@ def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) 
 
     for i in range(len(conf_matrix)):
         for j in range(len(conf_matrix[i])):
-            ax.text(j, i, str(conf_matrix[i, j]), ha='center', va='center', color='black')
+            ax.text(j, i, str(conf_matrix[i, j]), ha="center", va="center", color="black")
     fig.canvas.draw()
 
     image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)

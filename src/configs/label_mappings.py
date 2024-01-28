@@ -30,11 +30,17 @@ GENERAL_MAP: LabelMap = {
         "color": "#00ff00",
         "osm_tags": {
             "landuse": [
-                "forest", "grass", "recreation_ground", "village_green", "meadow", "forestry", "mountain_ridge",
+                "forest",
+                "grass",
+                "recreation_ground",
+                "village_green",
+                "meadow",
+                "forestry",
+                "mountain_ridge",
                 "mountain_pass",
             ],
             "natural": True,
-            "leisure": ["park", "garden"]
+            "leisure": ["park", "garden"],
         },
     },
     "impervious_surface": {
@@ -46,16 +52,14 @@ GENERAL_MAP: LabelMap = {
             "railway": True,
             "landuse": ["industrial", "commercial", "residential", "retail"],
             "aeroway": ["aerodrome"],  # TODO could we set true?
-            "amenity": ["parking"]
+            "amenity": ["parking"],
         },
     },
     "agriculture": {
         "idx": 3,
         "color": "#f5a142",
-        "osm_tags": {
-            "landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural"]
-        }
-    }
+        "osm_tags": {"landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural"]},
+    },
 }
 
 # todo add other, more specific configs, e.g. specialized for soil sealing, ...
