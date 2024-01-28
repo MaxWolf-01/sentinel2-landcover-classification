@@ -17,6 +17,7 @@ from lightning.pytorch.loggers import WandbLogger
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
+from torchmetrics import JaccardIndex as IoU
 from torch import nn
 from PIL import Image
 
@@ -63,19 +64,29 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
-                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
+                     "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+                     "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
                 #     "accuracy": torchmetrics.Accuracy(),
             },
         }
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-            model=self.net,
-            mode=config.train.compile_mode,
-            fullgraph=config.train.compile_fullgraph,
-            disable=config.train.compile_disable,
-        )
+#        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+ #            model=self.net,
+  #           mode=config.train.compile_mode,
+   #          fullgraph=config.train.compile_fullgraph,
+    #         disable=config.train.compile_disable,
+     #    )
+
+    def on_fit_start(self) -> None:
+        """
+        This hook is called at the very beginning of the fit process.
+        It is used  to move all metrics to the appropriate device.
+        """
+        for mode_metrics in self.metrics.values():
+            for metric in mode_metrics.values():
+                metric.to(self.device)
 
     def on_fit_start(self) -> None:
         """
@@ -116,6 +127,10 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         for metric_name, metric in self.metrics["val"].items():
             computed_value = metric.compute()
             computed_metrics[metric_name] = computed_value.cpu().numpy()
+
+            if metric_name == 'iou':
+                # TODO: Correct
+                self.log(f"val/{metric_name}", computed_value, on_step=False, on_epoch=True)
 
             if computed_value.numel() == 1:
                 self.log(f"val/{metric_name}", computed_value)
@@ -284,7 +299,7 @@ def main() -> None:
     config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
     config.train.tags.extend(args.tags or [])
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
-    config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+    config.train.wandb_entity = "luisk1"# os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
