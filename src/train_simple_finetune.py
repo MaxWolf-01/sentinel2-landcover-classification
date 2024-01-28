@@ -183,6 +183,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
             name=config.train.run_name,
             log_model=False,  # no wandb artifacts
             save_dir=LOG_DIR / "wandb" / config.train.project_name,
+            tags=config.train.tags,
         )
         if config.train.use_wandb_logger
         else False
@@ -210,6 +211,7 @@ def main() -> None:
     configs: dict[str, Config] = {
         "base": cfg.CONFIG,
         "debug": cfg.DEBUG_CFG,
+        "overfit": cfg.OVERFIT_CFG,
         "tune": ...,
     }
     parser = argparse.ArgumentParser()
@@ -217,9 +219,16 @@ def main() -> None:
         "--config", type=str, default="base", help=f"Specify config. Default: base; Available: {list[configs]}"
     )
     parser.add_argument("--name", type=str, default=None, help="Specify run name prefix. Default: None")
+    parser.add_argument("--wandb", action="store_true", default=False, help="Force wandb logging. Default: False")
+    # list of tags
+    parser.add_argument(
+        "--tags", nargs="+", default=None, help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
+    )
     args = parser.parse_args()
     cfg_key: str = args.config or "base"
     config: Config = configs[cfg_key]
+    config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
+    config.train.tags.extend(args.tags or [])
     config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
