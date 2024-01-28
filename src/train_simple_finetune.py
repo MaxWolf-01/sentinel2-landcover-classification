@@ -72,12 +72,12 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-    #        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-    #            model=self.net,
-    #           mode=config.train.compile_mode,
-    #          fullgraph=config.train.compile_fullgraph,
-    #         disable=config.train.compile_disable,
-    #    )
+        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+            model=self.net,
+            mode=config.train.compile_mode,
+            fullgraph=config.train.compile_fullgraph,
+            disable=config.train.compile_disable,
+        )
 
     def on_fit_start(self) -> None:
         """
