@@ -17,7 +17,7 @@ from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 
 from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
-from plotting import load_senintel_tiff_for_plotting
+from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
 from src.data.s2osmdatamodule import S2OSMDatamodule
@@ -100,6 +100,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         if isinstance(self.logger, WandbLogger):
             log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
 
+    def predict_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
+        return self._model_step(batch, mode="test")
+
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
             self.net.parameters(),
@@ -124,6 +127,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         logits = self.net(x)
 
+        if mode == "test":
+            return logits
+
         loss = self.loss_fn(logits, y)
 
         if self.trainer.sanity_checking:
@@ -143,7 +149,7 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img, bbox = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
+    orig_img, bbox = load_sentinel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
     orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
     labels = sample.y.cpu().numpy()
     # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
