@@ -22,7 +22,7 @@ class ModelConfig:
     patch_height: int
     patch_width: int
     fcn_out_channels: int
-    num_classess: int
+    num_classes: int
 
 
 @dataclass
@@ -62,7 +62,7 @@ CONFIG = Config(
         patch_height=14,
         patch_width=14,
         fcn_out_channels=256,
-        num_classess=7,  # todo
+        num_classes=4,  # todo
     ),
     datamodule=S2OSMDatamoduleConfig(
         dataset_cfg=S2OSMDatasetConfig(),
