@@ -20,8 +20,8 @@ from torchmetrics.classification import MulticlassConfusionMatrix
 from torch import nn
 from PIL import Image
 
-from src.configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
-from src.plotting import load_senintel_tiff_for_plotting
+from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
 from src.data.s2osmdatamodule import S2OSMDatamodule
@@ -126,6 +126,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
             log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
 
+    def predict_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
+        return self._model_step(batch, mode="test")
+
     def configure_optimizers(self) -> dict[str, Any]:
         optimizer = torch.optim.Adam(
             self.net.parameters(),
@@ -150,6 +153,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         logits = self.net(x)
 
+        if mode == "test":
+            return logits
+
         loss = self.loss_fn(logits, y)
 
         if self.trainer.sanity_checking:
@@ -167,18 +173,17 @@ def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str]
     val_ds: S2OSMDataset = model.trainer.val_dataloaders.dataset
     sample: S2OSMSample = val_ds[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
-    with torch.no_grad():
+    with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img = load_senintel_tiff_for_plotting(val_ds.sentinel_files[0])
+    orig_img, bbox = load_sentinel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
     orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
-    orig_img = Image.fromarray(orig_img, mode="RGB")
     labels = sample.y.cpu().numpy()
-    # TODO are colors customizable?
+    # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
     masks = {
         "predictions": {"mask_data": pred, "class_labels": class_labels},
         "labels": {"mask_data": labels, "class_labels": class_labels},
     }
-    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks)})
+    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks, caption=f"{bbox}")})
 
 
 def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
