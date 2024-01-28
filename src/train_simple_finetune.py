@@ -13,12 +13,12 @@ import optuna
 import torch
 import torchmetrics
 import wandb
-from PIL import Image
 from lightning.pytorch.loggers import WandbLogger
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torch import nn
+from PIL import Image
 
 from src.configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
 from src.plotting import load_senintel_tiff_for_plotting
