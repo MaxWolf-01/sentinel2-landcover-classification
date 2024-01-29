@@ -14,9 +14,11 @@ import torch
 import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
+from torchmetrics import JaccardIndex as IoU
+from torchmetrics import Accuracy
 from torch import nn
 from PIL import Image
 
@@ -57,14 +59,14 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
-        # TODO mIoU
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             "train": {
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
-                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
-                #     "accuracy": torchmetrics.Accuracy(),
+                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+                "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
+                "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
             },
         }
 
@@ -118,7 +120,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             computed_metrics[metric_name] = computed_value.cpu().numpy()
 
             if computed_value.numel() == 1:
-                self.log(f"val/{metric_name}", computed_value)
+                self.log(f"val/{metric_name}", computed_value, on_step=False, on_epoch=True)
             metric.reset()
 
         if isinstance(self.logger, WandbLogger):
