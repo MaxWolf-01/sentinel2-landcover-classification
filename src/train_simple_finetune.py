@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import io
 import os
 import pprint
 import random
@@ -229,22 +230,19 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
     ax.set_title("Confusion Matrix", pad=20)
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
-    label_names = list(class_labels.values())
-
-    ax.set_xticks(np.arange(len(label_names)))
-    ax.set_yticks(np.arange(len(label_names)))
-    ax.set_xticklabels(label_names)
-    ax.set_yticklabels(label_names)
+    ax.set_xticks((ticks := np.arange(len(class_labels))))
+    ax.set_yticks(ticks)
+    ax.set_xticklabels((label_texts := list(class_labels.values())))
+    ax.set_yticklabels(label_texts)
     plt.xticks(rotation=45)
 
-    for i in range(len(conf_matrix)):
-        for j in range(len(conf_matrix[i])):
-            ax.text(j, i, str(conf_matrix[i, j]), ha="center", va="center", color="black")
-    fig.canvas.draw()
+    for (i, j), val in np.ndenumerate(conf_matrix):
+        ax.text(j, i, str(val), ha="center", va="center", color="black")
 
-    image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
-    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))  # Adjust for RGBA
-    wandb.log({f"{mode}/confusion_matrix": wandb.Image(image)})
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    buf.seek(0)
+    wandb.log({f"{mode}/confusion_matrix": wandb.Image(plt.imread(buf))})
     plt.close(fig)
 
 
