@@ -18,6 +18,8 @@ from lightning.pytorch.loggers import WandbLogger
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
+from torchmetrics import JaccardIndex as IoU
+from torchmetrics import Accuracy
 from torch import nn
 from PIL import Image
 
@@ -59,14 +61,14 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
-        # TODO mIoU
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             "train": {
                 #     "accuracy": torchmetrics.Accuracy(),
             },
             "val": {
-                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes)
-                #     "accuracy": torchmetrics.Accuracy(),
+                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+                "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
+                "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
             },
         }
 
