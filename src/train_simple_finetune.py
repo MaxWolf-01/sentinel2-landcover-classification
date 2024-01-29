@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import os
 import pprint
+import random
 from typing import Any, Literal
 
 import dotenv
@@ -25,10 +26,11 @@ from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
 from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
+from src.data.s2osmdataset import S2OSMSample
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.simple_finetune as cfg
-from src.utils import get_run_name, get_logger
+from src.utils import get_unique_run_name, get_logger
+from numpy import typing as npt
 
 script_logger = get_logger(__name__)
 
@@ -93,10 +95,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         return self._model_step(batch, mode="train")
 
     def on_train_epoch_end(self) -> None:
-        for name, metric in self.metrics["train"].keys():
-            epoch_metric = metric.compute()
-            self.log(f"train/{name}", epoch_metric)
-            metric.reset()
+        epoch_metrics = compute_metrics(self.metrics, mode="train")
+        self.log_scalar_metrics(epoch_metrics, mode="train")
+        self.log_image_metrics(epoch_metrics, mode="train")
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
         logits = self(batch.x)
@@ -112,18 +113,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         if self.trainer.sanity_checking:
             return
 
-        computed_metrics = {}
-        for metric_name, metric in self.metrics["val"].items():
-            computed_value = metric.compute()
-            computed_metrics[metric_name] = computed_value.cpu().numpy()
-
-            if computed_value.numel() == 1:
-                self.log(f"val/{metric_name}", computed_value)
-            metric.reset()
-
-        if isinstance(self.logger, WandbLogger):
-            log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
-            log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
+        epoch_metrics = compute_metrics(self.metrics, mode="val")
+        self.log_scalar_metrics(epoch_metrics, mode="val")
+        self.log_image_metrics(epoch_metrics, mode="val")
 
     def predict_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
         return self._model_step(batch, mode="test")
@@ -167,22 +159,71 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         return loss
 
+    def log_scalar_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+        for metric_name, metric_value in computed_metrics.items():
+            if metric_value.prod(metric_value.shape) == 1:
+                self.log(f"{mode}/{metric_name}", metric_value.item())
 
-def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str], idx: int = 0) -> None:
-    val_ds: S2OSMDataset = model.trainer.val_dataloaders.dataset
-    sample: S2OSMSample = val_ds[idx]
+    def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+        if not isinstance(self.logger, WandbLogger) and (not self.config.train.log_img_in_train and mode == "train"):
+            return
+
+        log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
+
+        img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
+        dataloader = self.trainer.train_dataloader if mode == "train" else self.trainer.val_dataloaders
+        class_labels = get_idx_to_label_map(GENERAL_MAP)
+        log_segmentation_pred(
+            f"{mode}/segmentation",
+            model=self,
+            dataloader=dataloader,
+            idx=img_idx,
+            class_labels=class_labels,
+            epoch=self.current_epoch,
+        )
+        log_segmentation_pred(
+            f"{mode}/fixed_prediction_dynamics",
+            model=self,
+            dataloader=dataloader,
+            idx=img_idx,
+            class_labels=class_labels,
+            epoch=self.current_epoch,
+        )
+
+
+def compute_metrics(metrics: dict[Mode, dict[str, torchmetrics.Metric]], mode: Mode) -> dict[str, npt.NDArray]:
+    computed_metrics = {}
+    for metric_name, metric in metrics[mode].items():
+        computed_value = metric.compute()
+        computed_metrics[metric_name] = computed_value.cpu().numpy()
+        metric.reset()
+    return computed_metrics
+
+
+def log_segmentation_pred(
+    plot_name: str,
+    model: pl.LightningModule,
+    dataloader: torch.utils.data.DataLoader,
+    class_labels: dict[int, str],
+    idx: int | None = None,
+    epoch: int | None = None,
+) -> None:
+    if idx is None:
+        idx = random.randint(0, len(dataloader.dataset) - 1)
+    sample: S2OSMSample = dataloader.dataset[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img, bbox = load_sentinel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
-    orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
+    orig_img, bbox = load_sentinel_tiff_for_plotting(dataloader.dataset.sentinel_files[0], return_bbox=True)
+    orig_img = dataloader.dataset.transform[0](image=orig_img)["image"]  # center crop
     labels = sample.y.cpu().numpy()
     # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
     masks = {
         "predictions": {"mask_data": pred, "class_labels": class_labels},
         "labels": {"mask_data": labels, "class_labels": class_labels},
     }
-    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks, caption=f"{bbox}")})
+    caption = f"{bbox} | Epoch: {epoch} | Sample ID: {idx}"
+    wandb.log({f"{plot_name}": wandb.Image(orig_img, masks=masks, caption=caption)})
 
 
 def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
@@ -208,7 +249,7 @@ def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) 
 
     image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
     image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))  # Adjust for RGBA
-    image = Image.fromarray(image[..., :3])  # Convert to RGB
+    image = Image.fromarray(image[..., :3])  # Convert to RGB  # TODO we can remove the PIL image conversion
 
     wandb.log({"confusion_matrix": wandb.Image(image)})
     plt.close(fig)
@@ -278,12 +319,15 @@ def main() -> None:
     parser.add_argument(
         "--tags", nargs="+", default=None, help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
+    parser.add_argument("--compile", action="store_true", default=True, help="Compile model. Default: True")
     args = parser.parse_args()
     cfg_key: str = args.config or "base"
     config: Config = configs[cfg_key]
+    config.model.num_classes = len(GENERAL_MAP)
+    config.train.compile_disable = not args.compile
     config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
     config.train.tags.extend(args.tags or [])
-    config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
+    config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
