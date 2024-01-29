@@ -61,15 +61,14 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
+        metrics = lambda: {  # noqa: E731
+            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+            "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
+            "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
+        }
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
-            "train": {
-                #     "accuracy": torchmetrics.Accuracy(),
-            },
-            "val": {
-                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
-                "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
-                "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
-            },
+            "train": metrics(),
+            "val": metrics(),
         }
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
@@ -97,25 +96,18 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         return self._model_step(batch, mode="train")
 
     def on_train_epoch_end(self) -> None:
-        epoch_metrics = compute_metrics(self.metrics, mode="train")
+        epoch_metrics = self.compute_metrics(mode="train")
         self.log_scalar_metrics(epoch_metrics, mode="train")
         self.log_image_metrics(epoch_metrics, mode="train")
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
-        logits = self(batch.x)
-        predictions = torch.argmax(logits, dim=1)
-        labels = batch.y
-
-        for name, metric in self.metrics["val"].items():
-            metric.update(predictions, labels)
-
         return self._model_step(batch, mode="val")
 
     def on_validation_epoch_end(self) -> None:
         if self.trainer.sanity_checking:
             return
 
-        epoch_metrics = compute_metrics(self.metrics, mode="val")
+        epoch_metrics = self.compute_metrics(mode="val")
         self.log_scalar_metrics(epoch_metrics, mode="val")
         self.log_image_metrics(epoch_metrics, mode="val")
 
@@ -156,14 +148,25 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         self.log(f"{mode}/loss", loss)
 
-        if not isinstance(self.logger, WandbLogger):
-            return loss
+        self.update_metrics(mode, predictions=torch.argmax(logits, dim=1), labels=y)
 
         return loss
 
+    def update_metrics(self, mode: Mode, predictions: torch.Tensor, labels: torch.Tensor) -> None:
+        for name, metric in self.metrics[mode].items():
+            metric.update(predictions, labels)
+
+    def compute_metrics(self, mode: Mode) -> dict[str, npt.NDArray]:
+        computed_metrics = {}
+        for metric_name, metric in self.metrics[mode].items():
+            computed_value = metric.compute()
+            computed_metrics[metric_name] = computed_value.cpu().numpy()
+            metric.reset()
+        return computed_metrics
+
     def log_scalar_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
         for metric_name, metric_value in computed_metrics.items():
-            if metric_value.prod(metric_value.shape) == 1:
+            if np.prod(metric_value.shape) == 1:
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
@@ -191,15 +194,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             class_labels=class_labels,
             epoch=self.current_epoch,
         )
-
-
-def compute_metrics(metrics: dict[Mode, dict[str, torchmetrics.Metric]], mode: Mode) -> dict[str, npt.NDArray]:
-    computed_metrics = {}
-    for metric_name, metric in metrics[mode].items():
-        computed_value = metric.compute()
-        computed_metrics[metric_name] = computed_value.cpu().numpy()
-        metric.reset()
-    return computed_metrics
 
 
 def log_segmentation_pred(
