@@ -122,6 +122,9 @@ class PrithviSegmentationModel(nn.Module):
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
+        self.head.apply(initialize_head_or_neck_weights)
+        self.neck.apply(initialize_head_or_neck_weights)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Input shape: (B, T, C, H, W); Output shape: (B, num_classes, H, W)"""
         features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
@@ -130,6 +133,20 @@ class PrithviSegmentationModel(nn.Module):
 
         output = self.head(neck_output)
         return output
+
+
+def initialize_head_or_neck_weights(m: nn.Module) -> None:
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+        nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.BatchNorm2d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 
 
 if __name__ == "__main__":

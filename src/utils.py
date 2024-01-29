@@ -45,11 +45,11 @@ def load_pritvhi_bands() -> list[str]:
     return config["bands"]
 
 
-def get_run_name(project_name: str, prefix: str | None = None) -> str:
+def get_unique_run_name(name: str, postfix: str | None = None) -> str:
     short_uuid: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    if prefix is not None:
-        return f"{project_name}_{prefix}_{short_uuid}"
-    return f"{project_name}_{short_uuid}"
+    if postfix is not None:
+        return f"{name}_{short_uuid}_{postfix}"
+    return f"{name}_{short_uuid}"
 
 
 def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
