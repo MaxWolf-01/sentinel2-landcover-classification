@@ -10,7 +10,7 @@ from matplotlib.colors import ListedColormap
 from data.download_data import BBox
 from src.configs.label_mappings import LabelMap, GENERAL_MAP
 import numpy.typing as npt
-
+from matplotlib.patches import Patch
 from src.configs.paths import SENTINEL_DIR, OSM_DIR
 
 
@@ -36,7 +36,7 @@ def plot_images(
     images: list[npt.NDArray],
     titles: list[str],
     bbox: BBox | None = None,
-    cmap: ListedColormap | LabelMap | None = None,
+    label_map: LabelMap | None = None,
     p: int | None = None,
 ) -> None:
     """Plots a list of images with their respective titles.
@@ -44,17 +44,19 @@ def plot_images(
         images (List[npt.NDArray]): List of images to be plotted.
         titles (List[str]): Titles for the images.
         bbox (Optional[BBox]): Bounding box information.
-        cmap (Optional[ListedColormap]): Color map for images.
+        label_map (Optional[ListedColormap]): Color map for images.
         p (Optional[int]): Precision for displaying bbox coordinates.
     """
-    cmap = get_color_map(cmap) if isinstance(cmap, dict) else cmap
+    cmap = get_color_map(label_map) if label_map else None
     num_images = len(images)
     fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
     for i, (img, title) in enumerate(zip(images, titles)):
         ax[i].imshow(img, cmap=cmap)
         ax[i].set_title(title)
         ax[i].axis("off")
-
+    if label_map:
+        legend_elements = [Patch(facecolor=label_map[label]["color"], label=label) for label in label_map]
+        plt.legend(handles=legend_elements, loc="upper center", bbox_to_anchor=(-0.15, -0.05), ncol=len(label_map))
     if bbox:
         fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
 
