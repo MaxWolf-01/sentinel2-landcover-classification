@@ -21,7 +21,6 @@ from torchmetrics.classification import MulticlassConfusionMatrix
 from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Accuracy
 from torch import nn
-from PIL import Image
 
 from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
 from plotting import load_sentinel_tiff_for_plotting
@@ -173,11 +172,11 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         if not isinstance(self.logger, WandbLogger) and (not self.config.train.log_img_in_train and mode == "train"):
             return
 
-        log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
+        class_labels = get_idx_to_label_map(GENERAL_MAP)
+        log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
 
         img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
         dataloader = self.trainer.train_dataloader if mode == "train" else self.trainer.val_dataloaders
-        class_labels = get_idx_to_label_map(GENERAL_MAP)
         log_segmentation_pred(
             f"{mode}/segmentation",
             model=self,
@@ -222,7 +221,7 @@ def log_segmentation_pred(
     wandb.log({f"{plot_name}": wandb.Image(orig_img, masks=masks, caption=caption)})
 
 
-def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
+def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
     fig, ax = plt.subplots(figsize=(10, 8))
     cax = ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
     fig.colorbar(cax)
@@ -245,9 +244,7 @@ def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) 
 
     image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
     image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))  # Adjust for RGBA
-    image = Image.fromarray(image[..., :3])  # Convert to RGB  # TODO we can remove the PIL image conversion
-
-    wandb.log({"confusion_matrix": wandb.Image(image)})
+    wandb.log({f"{mode}/confusion_matrix": wandb.Image(image)})
     plt.close(fig)
 
 
