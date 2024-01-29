@@ -18,58 +18,47 @@ def get_idx_to_label_map(label_map: LabelMap) -> dict[int, str]:
 
 # class labels as in Multiclass Semantic Segmentation with Very High-Resolution Satellite Images | doi:10.2760/46796
 # OSM mapping might differ from the one used in the paper (todo maybe authors can share this detail actually?)
+
 GENERAL_MAP: LabelMap = {
     "other": {
         "idx": 0,
         "color": "#000000",
         "osm_tags": {},
     },
-    "building": {
+    "nature": {
         "idx": 1,
-        "color": "#ff0000",
-        "osm_tags": {
-            "building": True,
-        },
-    },
-    "low_vegetation": {
-        "idx": 2,
         "color": "#00ff00",
         "osm_tags": {
-            "landuse": "grass",
-            "leisure": "garden",
-            "natural": "grassland",
-        },
-    },
-    "high_vegetation": {
-        "idx": 3,
-        "color": "#006432",
-        "osm_tags": {
-            "natural": "wood",
-            "landuse": "forest",
-        },
-    },
-    "water": {
-        "idx": 4,
-        "color": "#0032fa",
-        "osm_tags": {
-            "natural": "water",
-            "waterway": True,
+            "landuse": [
+                "forest",
+                "grass",
+                "recreation_ground",
+                "village_green",
+                "meadow",
+                "forestry",
+                "mountain_ridge",
+                "mountain_pass",
+            ],
+            "natural": True,
+            "leisure": ["park", "garden"],
         },
     },
     "impervious_surface": {
-        "idx": 5,
+        "idx": 2,
         "color": "#646464",
         "osm_tags": {
             "highway": True,
-            "surface": "paved",
+            "building": True,
+            "railway": True,
+            "landuse": ["industrial", "commercial", "residential", "retail"],
+            "aeroway": ["aerodrome"],  # TODO could we set true?
+            "amenity": ["parking"],
         },
     },
-    "railway": {
-        "idx": 6,
-        "color": "#c864c8",
-        "osm_tags": {
-            "railway": True,  # todo this seems to braod for 10m sentinel resuolution?
-        },
+    "agriculture": {
+        "idx": 3,
+        "color": "#f5a142",
+        "osm_tags": {"landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural"]},
     },
 }
 
