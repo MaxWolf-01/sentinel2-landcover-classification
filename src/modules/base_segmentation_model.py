@@ -122,15 +122,16 @@ class PrithviSegmentationModel(nn.Module):
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
+        freeze_params(self.backbone)
         self.head.apply(initialize_head_or_neck_weights)
         self.neck.apply(initialize_head_or_neck_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Input shape: (B, T, C, H, W); Output shape: (B, num_classes, H, W)"""
-        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
-
+        # no mae mask | features: (B, tokens, emb_d)
+        with torch.no_grad():  # not sure if needed, since all params are no_grad
+            features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)
         neck_output = self.neck(features)
-
         output = self.head(neck_output)
         return output
 
@@ -147,6 +148,11 @@ def initialize_head_or_neck_weights(m: nn.Module) -> None:
         nn.init.xavier_normal_(m.weight)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
+
+
+def freeze_params(m: nn.Module) -> None:
+    for param in m.parameters():
+        param.requires_grad = False
 
 
 if __name__ == "__main__":
