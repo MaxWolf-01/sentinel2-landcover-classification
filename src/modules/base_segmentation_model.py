@@ -80,10 +80,10 @@ class FCNHead(nn.Module):
         self,
         num_classes: int,
         in_channels: int,
-        out_channels: int = 256,
-        num_convs: int = 1,
+        out_channels: int,
+        num_convs: int,
+        dropout: float,
         kernel_size: int = 3,
-        dropout_ratio: float = 0.1,
     ) -> None:
         super().__init__()
         self.net = nn.Sequential(
@@ -101,7 +101,7 @@ class FCNHead(nn.Module):
                     nn.ReLU(inplace=True),
                 ]
             ],
-            nn.Dropout2d(dropout_ratio),
+            nn.Dropout2d(dropout),
             nn.Conv2d(out_channels, num_classes, kernel_size=1),
         )
 
@@ -117,10 +117,21 @@ class PrithviSegmentationModel(nn.Module):
         num_frames: int = 1,
     ) -> None:
         super().__init__()
-        # TODO we don't need to load the entire thing if we only want the encoder!!
         self.backbone: MaskedAutoencoderViT = load_prithvi(num_frames=num_frames)
         self.neck: nn.Module = neck
         self.head: nn.Module = head
+
+        [
+            delattr(self.backbone, attr)
+            for attr in [  # remove all unused weights from backbone
+                "decoder_embed",
+                "mask_token",
+                "decoder_pos_embed",
+                "decoder_blocks",
+                "decoder_norm",
+                "decoder_pred",
+            ]
+        ]
 
         freeze_params(self.backbone)
         self.head.apply(initialize_head_or_neck_weights)
