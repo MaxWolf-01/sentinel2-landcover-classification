@@ -32,7 +32,7 @@ class S2OSMDataset(Dataset):
         self.osm_files = list(OSM_DIR.glob("*.tif"))
         assert len(self.sentinel_files) == len(self.osm_files), (
             f"There are different amounts of input data and labels:\n"
-            f"Input Data:{self.sentinel_files}\nLabels: {self.osm_files}"
+            f"Input Data:{len(self.sentinel_files)}\nLabels: {len(self.osm_files)}"
         )
         assert len(self) > 0, "No data found. Did you run `download_data.py`?"
 
