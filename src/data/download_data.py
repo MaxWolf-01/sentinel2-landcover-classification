@@ -2,6 +2,7 @@ import argparse
 import concurrent
 import os
 import typing
+from pathlib import Path
 
 import einops
 import numpy as np
@@ -16,8 +17,8 @@ import numpy.typing as npt
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from src.configs.label_mappings import LabelMap, OSMTagMap, GENERAL_MAP
-from src.configs.paths import SENTINEL_DIR, OSM_DIR, ROOT_DIR
+from src.configs.label_mappings import LabelMap, OSMTagMap, MULTICLASS_MAP, BINARY_MAP, MAPS
+from src.configs.paths import ROOT_DIR, DATA_DIR
 from src.utils import load_pritvhi_bands
 
 
@@ -36,34 +37,40 @@ class BBox(typing.NamedTuple):
 
 
 AOIs: dict[str, BBox] = {
-    "VIE": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
+    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
     "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    "AT": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
+    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
 }
 
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # TODO is this the correct one?
+DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
 BANDS: list[str] = load_pritvhi_bands()
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
 LABEL_MAPPINGS: dict[str, LabelMap] = {
-    "general": GENERAL_MAP,
-    # "soil_sealing": ...
+    "multi": MULTICLASS_MAP,
+    "binary": BINARY_MAP,
 }
+
+
+class DataDirs:
+    def __init__(self, aoi: str, map_type: str) -> None:
+        get_path = lambda x: DATA_DIR / aoi / map_type / x  # noqa: E731
+        self.sentinel: Path = get_path("sentinel")
+        self.osm: Path = get_path("osm")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="VIE", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
-    parser.add_argument(
-        "--labels", type=str, default="general", help="Specify a label mapping to use. Default: general."
-    )
-    parser.add_argument("--workers", type=int, default=4, help="Specify the number of workers. Default: 8")
+    parser.add_argument("--aoi", type=str, default="vie", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
+    parser.add_argument("--labels", type=str, default="multiclass", help="Specify a label mapping to use.")
+    parser.add_argument("--workers", type=int, default=1, help="Specify the number of workers.")
+    parser.add_argument("--parallel", action="store_true", help="Use parallel processing.")
     args = parser.parse_args()
     aoi = AOIs[args.aoi]
-    label_map = LABEL_MAPPINGS[args.labels]
+    label_map = MAPS[args.labels]
     max_workers = args.workers
 
     ox.config(use_cache=True, cache_folder=ROOT_DIR / "osmnx_cache")
@@ -71,14 +78,20 @@ def main() -> None:
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
 
-    SENTINEL_DIR.mkdir(exist_ok=True, parents=True)
-    OSM_DIR.mkdir(exist_ok=True, parents=True)
+    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
+    data_dirs.osm.mkdir(parents=True, exist_ok=True)
+    data_dirs.sentinel.mkdir(parents=True, exist_ok=True)
 
-    segments: list[BBox] = calculate_segments(aoi, SEGMENT_SIZE)
+    segments: list[BBox] = _calculate_segments(aoi, SEGMENT_SIZE)
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+    pool_executor = (
+        concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        if args.parallel
+        else concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    )
+    with pool_executor as executor:
         future_to_segment = {
-            executor.submit(process_segment, segment, idx, label_map, config): (idx, segment)
+            executor.submit(_process_segment, segment, idx, label_map, config, data_dirs): (idx, segment)
             for idx, segment in enumerate(segments)
         }
         for future in tqdm(concurrent.futures.as_completed(future_to_segment), total=len(future_to_segment)):
@@ -86,22 +99,31 @@ def main() -> None:
             try:
                 future.result()
             except Exception as exc:
+                # cleanup, so we don't have imbalance between sentinel and osm data
+                sentinel_file = data_dirs.sentinel / f"{idx}.tif"
+                sentinel_file.unlink(missing_ok=True)
+                osm_file = data_dirs.osm / f"{idx}.tif"
+                osm_file.unlink(missing_ok=True)
+
                 print(f"Segment {idx} generated an exception: {exc}")
                 if "terminated abruptly" in str(exc):
                     print(
                         "You might have run out of RAM. "
                         "Try lowering the number of workers via the --workers argument."
+                        "Or don't use the --parallel flag to use threads instead of processes."
                     )
 
 
-def process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig) -> None:
-    sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=sh_config)
-    save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment)
-    osm_data = fetch_osm_data(segment, tag_mapping=label_map)
-    save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=label_map["other"]["idx"])
+def _process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig, data_dirs: DataDirs) -> None:
+    sentinel_data: npt.NDArray = _fetch_sentinel_data(segment=segment, sh_config=sh_config)
+    _save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dirs.sentinel)
+    osm_data = _fetch_osm_data(segment, tag_mapping=label_map)
+    _save_rasterized_osm_data(
+        osm_data, aoi=segment, idx=idx, other_cls_label=label_map["other"]["idx"], osm_dir=data_dirs.osm
+    )
 
 
-def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
+def _calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     lon_diff = bbox.east - bbox.west
     lat_diff = bbox.north - bbox.south
     lon_segments = int(np.ceil(lon_diff / (segment_size_km / 111)))
@@ -121,7 +143,7 @@ def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     return segments
 
 
-def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
+def _fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
     evalscript = _create_evalscript(BANDS)
     bbox: sh.BBox = sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=CRS)
     request = sh.SentinelHubRequest(
@@ -159,11 +181,11 @@ def _create_evalscript(bands: list[str]) -> str:
     """
 
 
-def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> None:
-    pixel_size_x, pixel_size_y = calculate_pixel_size(aoi, RESOLUTION)
+def _save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox, sentinel_dir: Path) -> None:
+    pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
     data = einops.rearrange(data, "h w c -> c h w")
     with rasterio.open(
-        fp=SENTINEL_DIR / f"{idx}.tif",
+        fp=sentinel_dir / f"{idx}.tif",
         mode="w",
         driver="GTiff",
         height=RESOLUTION[0],
@@ -176,18 +198,18 @@ def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox) -> Non
         f.write(data)
 
 
-def calculate_pixel_size(aoi: BBox, resolution: tuple[int, int]) -> tuple[float, float]:
+def _calculate_pixel_size(aoi: BBox, resolution: tuple[int, int]) -> tuple[float, float]:
     pixel_size_x = (aoi.east - aoi.west) / resolution[0]
     pixel_size_y = (aoi.north - aoi.south) / resolution[1]
     return pixel_size_x, pixel_size_y
 
 
-def fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
+def _fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
     """Fetch individual labels -> concant to one -> put on top of aoi segment filled with 'other' label
-    NOTE: If there are overlapping features, the last one will be used.
+    NOTE: If there are overlapping features, the last one will be used. TODO make sure sealing is highest prio!
     """
     gdf_list = [
-        fetch_osm_data_by_tags(segment, tags=entry["osm_tags"], class_label=entry["idx"])
+        _fetch_osm_data_by_tags(segment, tags=entry["osm_tags"], class_label=entry["idx"])
         for entry in list(tag_mapping.values())[1:]  # skip "other" class
     ]
     osm_gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
@@ -197,7 +219,7 @@ def fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
     return osm_gdf
 
 
-def fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) -> gpd.GeoDataFrame:
+def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) -> gpd.GeoDataFrame:
     """
     Fetch OSM data within the set bounds and with given feature tags, and assign class labels.
     If no data is found, returns an empty GeoDataFrame.
@@ -220,14 +242,14 @@ def fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) -> 
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
-def save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, idx: int, other_cls_label: int) -> None:
-    pixel_size_x, pixel_size_y = calculate_pixel_size(aoi, RESOLUTION)
+def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int) -> None:
+    pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
     transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
 
     shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
     burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=other_cls_label, dtype="uint8")
     with rasterio.open(
-        fp=OSM_DIR / f"{idx}.tif",
+        fp=osm_dir / f"{idx}.tif",
         mode="w",
         driver="GTiff",
         height=RESOLUTION[0],

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import dataclasses
 from dataclasses import dataclass
 
@@ -17,13 +16,16 @@ class Config:
 
 @dataclass
 class ModelConfig:
-    num_frames: int
-    embed_dim: int
+    num_frames: int  # input frames per prediction
     output_embed_dim: int
     patch_height: int
     patch_width: int
     fcn_out_channels: int
+    fcn_num_convs: int
+    fcn_dropout: float
+
     num_classes: int | None = None  # set dynamically from dataset tag mapping
+    embed_dim: int = 768  # fixed prithvi output embedding dim
 
 
 @dataclass
@@ -61,15 +63,16 @@ CONFIG = Config(
     model=ModelConfig(
         # model defaults (mostly from crop classification cfg)
         num_frames=(num_frames := 1),
-        embed_dim=(embed_dim := 768),
-        output_embed_dim=embed_dim * num_frames,
+        output_embed_dim=ModelConfig.embed_dim * num_frames,
         patch_height=14,
         patch_width=14,
         fcn_out_channels=256,
+        fcn_num_convs=1,
+        fcn_dropout=0.1,
     ),
     datamodule=S2OSMDatamoduleConfig(
-        dataset_cfg=S2OSMDatasetConfig(),
-        batch_size=2,
+        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="multiclass"),
+        batch_size=32,
         num_workers=1,
         pin_memory=True,
         augment=True,
@@ -96,17 +99,32 @@ CONFIG = Config(
     ),
 )
 
-DEBUG_CFG = copy.deepcopy(CONFIG)
-DEBUG_CFG.train.use_wandb_logger = False
-DEBUG_CFG.train.devices = 1
-DEBUG_CFG.datamodule.batch_size = 1
-DEBUG_CFG.train.compile_disable = True
-DEBUG_CFG.train.log_img_in_train = True
-DEBUG_CFG.train.compile_disable = True
-DEBUG_CFG.train.tags.append("debug")
 
-OVERFIT_CFG = copy.deepcopy(CONFIG)
-OVERFIT_CFG.train.overfit_batches = 1
-OVERFIT_CFG.datamodule.augment = False
-OVERFIT_CFG.train.log_img_in_train = True
-OVERFIT_CFG.train.tags.append("overfit")
+def debug(config: Config) -> Config:
+    config.train.devices = 1
+    config.datamodule.batch_size = 1
+    config.train.compile_disable = True
+    config.train.log_img_in_train = True
+    config.train.tags.append("debug")
+    return config
+
+
+def overfit(config: Config) -> Config:
+    config.train.overfit_batches = 1
+    config.datamodule.augment = False
+    config.train.log_img_in_train = True
+    config.train.tags.append("overfit")
+    return config
+
+
+# def large_model(config: Config) -> Config:
+#     config.model.fcn_num_convs = 3
+#     config.model.fcn_out_channels = 512
+#     config.train.tags.append("large-model")
+#     return config
+#
+#
+# def small_model(config: Config) -> Config:
+#     config.model.fcn_out_channels = 128
+#     config.train.tags.append("small-model")
+#     return config

@@ -23,7 +23,8 @@ from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Accuracy
 from torch import nn
 
-from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from configs.label_mappings import MAPS, LabelMap
+from data.download_data import AOIs
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
@@ -58,9 +59,12 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 in_channels=config.model.output_embed_dim,
                 out_channels=config.model.fcn_out_channels,
                 num_classes=config.model.num_classes,
+                num_convs=config.model.fcn_num_convs,
+                dropout=config.model.fcn_dropout,
             ),
         )
         self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
+        self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
             "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
@@ -173,7 +177,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         if not isinstance(self.logger, WandbLogger) and (not self.config.train.log_img_in_train and mode == "train"):
             return
 
-        class_labels = get_idx_to_label_map(GENERAL_MAP)
+        class_labels = {i: label for i, label in enumerate(self.label_map)}
         log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
 
         img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
@@ -293,38 +297,42 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main() -> None:
-    dotenv.load_dotenv()
-    configs: dict[str, Config] = {
-        "base": cfg.CONFIG,
-        "debug": cfg.DEBUG_CFG,
-        "overfit": cfg.OVERFIT_CFG,
-        "tune": ...,
-    }
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", type=str, default="base", help=f"Specify config. Default: base; Available: {list[configs]}"
+    parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
+    parser.add_argument("--model", type=str, default="base", help="Model prests.")
+    parser.add_argument("--bs", type=int, default=None, help="batch size.")
+    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
+    parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
+    parser.add_argument("--wandb", action="store_true", help="disable wandb logging.")
+    parser.add_argument(  # list of tags
+        "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
-    parser.add_argument("--name", type=str, default=None, help="Specify run name prefix. Default: None")
-    parser.add_argument("--wandb", action="store_true", default=False, help="Force wandb logging. Default: False")
-    # list of tags
-    parser.add_argument(
-        "--tags", nargs="+", default=None, help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
-    )
-    parser.add_argument("--compile", action="store_true", default=True, help="Compile model. Default: True")
+    parser.add_argument("--no-compile", action="store_true", help="Compile model. Default: True")
     args = parser.parse_args()
-    cfg_key: str = args.config or "base"
-    config: Config = configs[cfg_key]
-    config.model.num_classes = len(GENERAL_MAP)
-    config.train.compile_disable = not args.compile
-    config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
-    config.train.tags.extend(args.tags or [])
+
+    dotenv.load_dotenv()
+
+    config: Config = {
+        "train": cfg.CONFIG,
+        "debug": cfg.debug(cfg.CONFIG),
+        "overfit": cfg.overfit(cfg.CONFIG),
+        "tune": ...,
+    }[(cfg_key := args.type)]
+    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
+    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.model.num_classes = len(config.datamodule.dataset_cfg.label_map)
+    config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.compile_disable = args.no_compile
+    config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
+    config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
-    if config == "tune":
+    if cfg_key == "tune":
         tune()
     else:
         train(config=config)

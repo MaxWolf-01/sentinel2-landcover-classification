@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 from matplotlib import pyplot as plt
 
-from configs.label_mappings import GENERAL_MAP
+from configs.label_mappings import MULTICLASS_MAP
 from configs.paths import OUT_DIR, ROOT_DIR
 from data.s2osmdatamodule import S2OSMDatamodule
 from src.train_simple_finetune import PrithviSegmentationFineTuner
@@ -47,5 +47,5 @@ if __name__ == '__main__':
     sentinel_paths = dm.val.sentinel_files
     mask_paths = dm.val.osm_files
     for (sentinel, mask, pred_img) in zip(sentinel_paths, mask_paths, batch):
-        plot_sentinel_mask_and_pred(sentinel=sentinel, mask=mask, pred_img=pred_img, label_map=GENERAL_MAP)
+        plot_sentinel_mask_and_pred(sentinel=sentinel, mask=mask, pred_img=pred_img, label_map=MULTICLASS_MAP)
         plt.show()
