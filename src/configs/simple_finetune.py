@@ -33,6 +33,12 @@ class TrainConfig:
     weight_decay: float
     betas: tuple[float, float]
 
+    # lr scheduler
+    lr_scheduler_type: str
+    lr_step_size: int
+    lr_gamma: float
+    weight_decay: float
+
     float32_matmul_precision: str
 
     # compile
@@ -93,6 +99,9 @@ CONFIG = Config(
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
+        lr_scheduler_type="StepLR",
+        lr_step_size=10,
+        lr_gamma=0.1,
     ),
 )
 

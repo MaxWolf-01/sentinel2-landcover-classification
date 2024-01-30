@@ -120,16 +120,17 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             lr=self.config.train.lr,
             weight_decay=self.config.train.weight_decay,
         )
-        # TODO scheduler (default in hls-os repo where linear decay with warmup)
-        # total_steps = self.trainer.max_epochs * len(self.train_dataloader())
-        # scheduler =
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=self.config.train.lr_step_size, gamma=self.config.train.lr_gamma
+        )
+
         return {
-            # "lr_scheduler": {
-            # "scheduler": scheduler,
-            # "interval": "step",
-            # "frequency": 1,
-            # },
             "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+            },
         }
 
     def _model_step(self, batch: S2OSMSample, mode: Mode) -> torch.Tensor:
