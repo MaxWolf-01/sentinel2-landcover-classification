@@ -39,12 +39,6 @@ def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
     return config["data_mean"], config["data_std"]
 
 
-def load_pritvhi_bands() -> list[str]:
-    with PRITHVI_CONFIG.open("r") as f:
-        config = yaml.safe_load(f)["train_params"]
-    return config["bands"]
-
-
 def get_unique_run_name(name: str, postfix: str | None = None) -> str:
     short_uuid: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     if postfix is not None:

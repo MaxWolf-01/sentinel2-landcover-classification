@@ -1,6 +1,7 @@
 import argparse
 import concurrent
 import os
+import traceback
 import typing
 from pathlib import Path
 
@@ -19,7 +20,6 @@ from tqdm import tqdm
 
 from src.configs.label_mappings import LabelMap, OSMTagMap, MULTICLASS_MAP, BINARY_MAP, MAPS
 from src.configs.paths import ROOT_DIR, DATA_DIR
-from src.utils import load_pritvhi_bands
 
 
 class BBox(typing.NamedTuple):
@@ -45,7 +45,8 @@ AOIs: dict[str, BBox] = {
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
 DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
-BANDS: list[str] = load_pritvhi_bands()
+# https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
+BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
 RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
 SEGMENT_SIZE: int = 25  # Size of segments in km
 
@@ -98,15 +99,15 @@ def main() -> None:
             idx, segment = future_to_segment[future]
             try:
                 future.result()
-            except Exception as exc:
+            except Exception as e:
                 # cleanup, so we don't have imbalance between sentinel and osm data
                 sentinel_file = data_dirs.sentinel / f"{idx}.tif"
                 sentinel_file.unlink(missing_ok=True)
                 osm_file = data_dirs.osm / f"{idx}.tif"
                 osm_file.unlink(missing_ok=True)
 
-                print(f"Segment {idx} generated an exception: {exc}")
-                if "terminated abruptly" in str(exc):
+                print(f"Segment {segment} idx:{idx} generated an exception:\n{traceback.format_exc()}")
+                if "terminated abruptly" in str(e):
                     print(
                         "You might have run out of RAM. "
                         "Try lowering the number of workers via the --workers argument."
@@ -118,9 +119,7 @@ def _process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh
     sentinel_data: npt.NDArray = _fetch_sentinel_data(segment=segment, sh_config=sh_config)
     _save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dirs.sentinel)
     osm_data = _fetch_osm_data(segment, tag_mapping=label_map)
-    _save_rasterized_osm_data(
-        osm_data, aoi=segment, idx=idx, other_cls_label=label_map["other"]["idx"], osm_dir=data_dirs.osm
-    )
+    _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)  # other=0
 
 
 def _calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
@@ -209,8 +208,8 @@ def _fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
     NOTE: If there are overlapping features, the last one will be used. TODO make sure sealing is highest prio!
     """
     gdf_list = [
-        _fetch_osm_data_by_tags(segment, tags=entry["osm_tags"], class_label=entry["idx"])
-        for entry in list(tag_mapping.values())[1:]  # skip "other" class
+        _fetch_osm_data_by_tags(segment, tags=label["osm_tags"], class_label_idx=i)
+        for i, label in enumerate(list(tag_mapping.values())[1:], start=1)  # skip "other" class
     ]
     osm_gdf: gpd.GeoDataFrame = pd.concat(gdf_list, ignore_index=True)  # type: ignore
     osm_gdf.dropna(subset=["geometry"], inplace=True)
@@ -219,13 +218,13 @@ def _fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
     return osm_gdf
 
 
-def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) -> gpd.GeoDataFrame:
+def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int) -> gpd.GeoDataFrame:
     """
     Fetch OSM data within the set bounds and with given feature tags, and assign class labels.
     If no data is found, returns an empty GeoDataFrame.
 
     Args:
-        class_label (int): Class label to assign to the features.
+        class_label_idx (int): Class label to assign to the features.
         segment (BBox): Segment to fetch data from.
         tags (dict): Dictionary of feature tags to fetch.
 
@@ -236,9 +235,10 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label: int) ->
         osm_data = ox.features_from_bbox(
             north=segment.north, south=segment.south, east=segment.east, west=segment.west, tags=tags
         )
-        osm_data["class"] = class_label
+        osm_data["class"] = class_label_idx
         return osm_data[["geometry", "class"]]
     except ox._errors.InsufficientResponseError:
+        print(f"No OSM data found for {tags} in segment {segment}")
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
