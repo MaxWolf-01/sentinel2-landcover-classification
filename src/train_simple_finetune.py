@@ -21,6 +21,7 @@ from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Accuracy
+from torch.optim.lr_scheduler import StepLR
 from torch import nn
 
 from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
@@ -120,18 +121,24 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             lr=self.config.train.lr,
             weight_decay=self.config.train.weight_decay,
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=self.config.train.lr_step_size, gamma=self.config.train.lr_gamma
-        )
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",
-                "frequency": 1,
-            },
+        schedulers = {
+            "StepLR": StepLR(optimizer, step_size=self.config.train.lr_step_size, gamma=self.config.train.lr_gamma),
         }
+        lr_scheduler = schedulers.get(self.config.train.lr_scheduler_type, {})
+
+        optimizer_config = {"optimizer": optimizer}
+        if self.config.train.use_lr_scheduler:
+            optimizer_config.update(
+                {
+                    "lr_scheduler": {
+                        "scheduler": lr_scheduler,
+                        "interval": "epoch",
+                        "frequency": 1,
+                    }
+                }
+            )
+
+        return optimizer_config
 
     def _model_step(self, batch: S2OSMSample, mode: Mode) -> torch.Tensor:
         x = batch.x
