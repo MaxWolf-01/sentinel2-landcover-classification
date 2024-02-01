@@ -39,6 +39,13 @@ class TrainConfig:
     # loss
     loss_type: typing.Literal["ce", "focal"]
 
+    # lr scheduler
+    use_lr_scheduler: bool
+    lr_scheduler_type: str
+    lr_step_size: int
+    lr_gamma: float
+    weight_decay: float
+
     float32_matmul_precision: str
 
     # compile
@@ -105,9 +112,15 @@ CONFIG = Config(
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
+
         loss_type="focal",
         focal_loss_alpha=0.25,
         focal_loss_gamma=2,
+
+        use_lr_scheduler=False,
+        lr_scheduler_type="StepLR",
+        lr_step_size=10,
+        lr_gamma=0.1,
     ),
 )
 
