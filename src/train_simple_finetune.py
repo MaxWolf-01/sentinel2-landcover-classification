@@ -230,24 +230,26 @@ def log_segmentation_pred(
 
 
 def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    normalized_conf_matrix = conf_matrix / row_sums
+
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
+    cax = ax.matshow(normalized_conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=normalized_conf_matrix.max()))
     fig.colorbar(cax)
 
-    ax.set_title("Confusion Matrix", pad=20)
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
     ax.set_xticks((ticks := np.arange(len(class_labels))))
     ax.set_yticks(ticks)
-    ax.set_xticklabels((label_texts := list(class_labels.values())))
+    ax.set_xticklabels((label_texts := list(class_labels.values())), rotation=45)
     ax.set_yticklabels(label_texts)
-    plt.xticks(rotation=45)
+    plt.tight_layout()
 
-    for (i, j), val in np.ndenumerate(conf_matrix):
-        ax.text(j, i, str(val), ha="center", va="center", color="black")
+    for (i, j), val in np.ndenumerate(normalized_conf_matrix):
+        ax.text(j, i, f"{val:.2f}", ha="center", va="center", color="black")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png")
+    fig.savefig(buf, format="png", bbox_inches="tight")
     buf.seek(0)
     wandb.log({f"{mode}/confusion_matrix": wandb.Image(plt.imread(buf))})
     plt.close(fig)
