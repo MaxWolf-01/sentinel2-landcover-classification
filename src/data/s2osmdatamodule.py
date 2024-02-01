@@ -21,7 +21,7 @@ class S2OSMDatamoduleConfig:
     batch_size: int
     num_workers: int
     pin_memory: bool
-    use_transforms: bool
+    augment: bool
     data_split: tuple[float, float, float]
     # Increase the batch size for validation by this factor. Possible if no_grad is used in validation step.
     val_batch_size_multiplier: int
@@ -38,7 +38,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.batch_size: int = cfg.batch_size
         self.num_workers: int = cfg.num_workers
         self.pin_memory: bool = cfg.pin_memory
-        self.use_transforms: bool = cfg.use_transforms
+        self.augment: bool = cfg.augment
 
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
@@ -75,35 +75,28 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
-        logger.info(f"Datamodule setup with {train_len} train, {val_len} val and {test_len} test samples.")
-
-        if not self.use_transforms:
-            return
-
-        logger.info("Configuring data augmentations ...")
-
         mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
-        # todo add transforms after evaluation pipeline is set up
-        train_transforms: A.Compose = A.Compose(
-            [
-                A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-                # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
-                # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-                A.Normalize(mean=mean, std=std),  # Normalize comes last!
-            ]
-        )
-        # Use non-random transforms for validation and test
-        val_test_transforms: A.Compose = A.Compose(
-            [
-                A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-                A.Normalize(mean=mean, std=std),  # Normalize comes last!
-            ]
-        )
+        random_transforms_and_augments = [
+            A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
+            # todo add transforms after evaluation pipeline is set up
+            # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
+            # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+        ]
+        # necessary transforms
+        deterministic_base_transforms = [
+            A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+        ]
+        train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
+        val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
 
         # Avoid data-leakage through augmentation -> aplpy transforms to train, val and test separately
         self.train.transform = train_transforms
         self.val.transform = val_test_transforms
         self.test.transform = val_test_transforms
+
+        logger.info(f"Datamodule setup with {train_len} train, {val_len} val and {test_len} test samples.")
 
     def train_dataloader(self) -> torch.utils.data.DataLoader:
         return self.dataloader_partial(self.train, shuffle=True)

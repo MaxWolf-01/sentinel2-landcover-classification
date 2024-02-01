@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import io
 import os
 import pprint
+import random
 from typing import Any, Literal
 
 import dotenv
@@ -14,23 +16,26 @@ import torch
 import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from torchmetrics.classification import MulticlassConfusionMatrix
 from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Accuracy
+from torch.optim.lr_scheduler import StepLR
 from torch import nn
-from PIL import Image
 
-from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from configs.label_mappings import MAPS, LabelMap
+from data.download_data import AOIs
+from losses import Loss, get_loss
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
 from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample, S2OSMDataset
+from src.data.s2osmdataset import S2OSMSample
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.simple_finetune as cfg
-from src.utils import get_run_name, get_logger
+from src.utils import get_unique_run_name, get_logger
+from numpy import typing as npt
 
 script_logger = get_logger(__name__)
 
@@ -56,18 +61,21 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 in_channels=config.model.output_embed_dim,
                 out_channels=config.model.fcn_out_channels,
                 num_classes=config.model.num_classes,
+                num_convs=config.model.fcn_num_convs,
+                dropout=config.model.fcn_dropout,
             ),
         )
-        self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
+
+        self.loss_fn: Loss = get_loss(config)
+        self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
+        metrics = lambda: {  # noqa: E731
+            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
+            "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
+            "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
+        }
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
-            "train": {
-                #     "accuracy": torchmetrics.Accuracy(),
-            },
-            "val": {
-                "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
-                "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
-                "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
-            },
+            "train": metrics(),
+            "val": metrics(),
         }
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
@@ -95,37 +103,20 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         return self._model_step(batch, mode="train")
 
     def on_train_epoch_end(self) -> None:
-        for name, metric in self.metrics["train"].keys():
-            epoch_metric = metric.compute()
-            self.log(f"train/{name}", epoch_metric)
-            metric.reset()
+        epoch_metrics = self.compute_metrics(mode="train")
+        self.log_scalar_metrics(epoch_metrics, mode="train")
+        self.log_image_metrics(epoch_metrics, mode="train")
 
     def validation_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
-        logits = self(batch.x)
-        predictions = torch.argmax(logits, dim=1)
-        labels = batch.y
-
-        for name, metric in self.metrics["val"].items():
-            metric.update(predictions, labels)
-
         return self._model_step(batch, mode="val")
 
     def on_validation_epoch_end(self) -> None:
         if self.trainer.sanity_checking:
             return
 
-        computed_metrics = {}
-        for metric_name, metric in self.metrics["val"].items():
-            computed_value = metric.compute()
-            computed_metrics[metric_name] = computed_value.cpu().numpy()
-
-            if computed_value.numel() == 1:
-                self.log(f"val/{metric_name}", computed_value, on_step=False, on_epoch=True)
-            metric.reset()
-
-        if isinstance(self.logger, WandbLogger):
-            log_image_prediction(model=self, class_labels=get_idx_to_label_map(GENERAL_MAP), idx=0)
-            log_confusion_matrix(computed_metrics["confusion_matrix"], get_idx_to_label_map(GENERAL_MAP))
+        epoch_metrics = self.compute_metrics(mode="val")
+        self.log_scalar_metrics(epoch_metrics, mode="val")
+        self.log_image_metrics(epoch_metrics, mode="val")
 
     def predict_step(self, batch: S2OSMSample, batch_idx: int) -> torch.Tensor:
         return self._model_step(batch, mode="test")
@@ -136,17 +127,24 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             lr=self.config.train.lr,
             weight_decay=self.config.train.weight_decay,
         )
-        # TODO scheduler (default in hls-os repo where linear decay with warmup)
-        # total_steps = self.trainer.max_epochs * len(self.train_dataloader())
-        # scheduler =
-        return {
-            # "lr_scheduler": {
-            # "scheduler": scheduler,
-            # "interval": "step",
-            # "frequency": 1,
-            # },
-            "optimizer": optimizer,
+        schedulers = {
+            "StepLR": StepLR(optimizer, step_size=self.config.train.lr_step_size, gamma=self.config.train.lr_gamma),
         }
+        lr_scheduler = schedulers.get(self.config.train.lr_scheduler_type, {})
+
+        optimizer_config = {"optimizer": optimizer}
+        if self.config.train.use_lr_scheduler:
+            optimizer_config.update(
+                {
+                    "lr_scheduler": {
+                        "scheduler": lr_scheduler,
+                        "interval": "epoch",
+                        "frequency": 1,
+                    }
+                }
+            )
+
+        return optimizer_config
 
     def _model_step(self, batch: S2OSMSample, mode: Mode) -> torch.Tensor:
         x = batch.x
@@ -164,55 +162,104 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         self.log(f"{mode}/loss", loss)
 
-        if not isinstance(self.logger, WandbLogger):
-            return loss
+        self.update_metrics(mode, predictions=torch.argmax(logits, dim=1), labels=y)
 
         return loss
 
+    def update_metrics(self, mode: Mode, predictions: torch.Tensor, labels: torch.Tensor) -> None:
+        for name, metric in self.metrics[mode].items():
+            metric.update(predictions, labels)
 
-def log_image_prediction(model: pl.LightningModule, class_labels: dict[int, str], idx: int = 0) -> None:
-    val_ds: S2OSMDataset = model.trainer.val_dataloaders.dataset
-    sample: S2OSMSample = val_ds[idx]
+    def compute_metrics(self, mode: Mode) -> dict[str, npt.NDArray]:
+        computed_metrics = {}
+        for metric_name, metric in self.metrics[mode].items():
+            computed_value = metric.compute()
+            computed_metrics[metric_name] = computed_value.cpu().numpy()
+            metric.reset()
+        return computed_metrics
+
+    def log_scalar_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+        for metric_name, metric_value in computed_metrics.items():
+            if np.prod(metric_value.shape) == 1:
+                self.log(f"{mode}/{metric_name}", metric_value.item())
+
+    def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+        if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
+            return
+        class_labels = {i: label for i, label in enumerate(self.label_map)}
+        log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
+
+        img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
+        dataloader = self.trainer.train_dataloader if mode == "train" else self.trainer.val_dataloaders
+        log_segmentation_pred(
+            f"{mode}/segmentation",
+            model=self,
+            dataloader=dataloader,
+            idx=img_idx,
+            class_labels=class_labels,
+            epoch=self.current_epoch,
+        )
+        log_segmentation_pred(
+            f"{mode}/fixed_prediction_dynamics",
+            model=self,
+            dataloader=dataloader,
+            idx=img_idx,
+            class_labels=class_labels,
+            epoch=self.current_epoch,
+        )
+
+
+# TODO also plot some of the direct input to the model
+def log_segmentation_pred(
+    plot_name: str,
+    model: pl.LightningModule,
+    dataloader: torch.utils.data.DataLoader,
+    class_labels: dict[int, str],
+    idx: int | None = None,
+    epoch: int | None = None,
+) -> None:
+    if idx is None:
+        idx = random.randint(0, len(dataloader.dataset) - 1)
+    # todo does this handle train dataloader correctly?
+    sample: S2OSMSample = dataloader.dataset[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img, bbox = load_sentinel_tiff_for_plotting(val_ds.sentinel_files[0], return_bbox=True)
-    orig_img = val_ds.transform[0](image=orig_img)["image"]  # center crop
+    orig_img, bbox = load_sentinel_tiff_for_plotting(dataloader.dataset.sentinel_files[0], return_bbox=True)
+    orig_img = dataloader.dataset.transform[0](image=orig_img)["image"]  # center crop
     labels = sample.y.cpu().numpy()
     # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
     masks = {
         "predictions": {"mask_data": pred, "class_labels": class_labels},
         "labels": {"mask_data": labels, "class_labels": class_labels},
     }
-    wandb.log({"prediction_dynamics": wandb.Image(orig_img, masks=masks, caption=f"{bbox}")})
+    caption = f"{bbox} | Epoch: {epoch} | Sample ID: {idx}"
+    wandb.log({f"{plot_name}": wandb.Image(orig_img, masks=masks, caption=caption)})
 
 
-def log_confusion_matrix(conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
+def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    normalized_conf_matrix = conf_matrix / row_sums
+
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
+    cax = ax.matshow(normalized_conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=normalized_conf_matrix.max()))
     fig.colorbar(cax)
 
-    ax.set_title("Confusion Matrix", pad=20)
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
-    label_names = list(class_labels.values())
+    ax.set_xticks((ticks := np.arange(len(class_labels))))
+    ax.set_yticks(ticks)
+    ax.set_xticklabels((label_texts := list(class_labels.values())), rotation=45)
+    ax.set_yticklabels(label_texts)
+    plt.tight_layout()
 
-    ax.set_xticks(np.arange(len(label_names)))
-    ax.set_yticks(np.arange(len(label_names)))
-    ax.set_xticklabels(label_names)
-    ax.set_yticklabels(label_names)
-    plt.xticks(rotation=45)
+    for (i, j), val in np.ndenumerate(normalized_conf_matrix):
+        ax.text(j, i, f"{val:.2f}", ha="center", va="center", color="black")
 
-    for i in range(len(conf_matrix)):
-        for j in range(len(conf_matrix[i])):
-            ax.text(j, i, str(conf_matrix[i, j]), ha="center", va="center", color="black")
-    fig.canvas.draw()
-
-    image = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
-    image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))  # Adjust for RGBA
-    image = Image.fromarray(image[..., :3])  # Convert to RGB
-
-    wandb.log({"confusion_matrix": wandb.Image(image)})
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+    wandb.log({f"{mode}/confusion_matrix": wandb.Image(plt.imread(buf))})
     plt.close(fig)
 
 
@@ -263,35 +310,42 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main() -> None:
-    dotenv.load_dotenv()
-    configs: dict[str, Config] = {
-        "base": cfg.CONFIG,
-        "debug": cfg.DEBUG_CFG,
-        "overfit": cfg.OVERFIT_CFG,
-        "tune": ...,
-    }
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", type=str, default="base", help=f"Specify config. Default: base; Available: {list[configs]}"
+    parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
+    parser.add_argument("--model", type=str, default="base", help="Model prests.")
+    parser.add_argument("--bs", type=int, default=None, help="batch size.")
+    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
+    parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
+    parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
+    parser.add_argument(  # list of tags
+        "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
-    parser.add_argument("--name", type=str, default=None, help="Specify run name prefix. Default: None")
-    parser.add_argument("--wandb", action="store_true", default=False, help="Force wandb logging. Default: False")
-    # list of tags
-    parser.add_argument(
-        "--tags", nargs="+", default=None, help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
-    )
+    parser.add_argument("--no-compile", action="store_true", help="Compile model. Default: True")
     args = parser.parse_args()
-    cfg_key: str = args.config or "base"
-    config: Config = configs[cfg_key]
-    config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
-    config.train.tags.extend(args.tags or [])
-    config.train.run_name = get_run_name(config.train.project_name, prefix=args.name)
+
+    dotenv.load_dotenv()
+
+    config: Config = {
+        "train": cfg.CONFIG,
+        "debug": cfg.debug(cfg.CONFIG),
+        "overfit": cfg.overfit(cfg.CONFIG),
+        "tune": ...,
+    }[(cfg_key := args.type)]
+    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
+    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
+    config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.compile_disable = args.no_compile
+    config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
+    config.train.tags.extend(args.tags)
+    config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
-    if config == "tune":
+    if cfg_key == "tune":
         tune()
     else:
         train(config=config)

@@ -8,7 +8,4 @@ LOG_DIR: Path = ROOT_DIR / "logs"
 CKPT_DIR: Path = ROOT_DIR / "ckpts"
 DATA_DIR: Path = ROOT_DIR / "data"
 
-SENTINEL_DIR: Path = DATA_DIR / "sentinel"
-OSM_DIR: Path = DATA_DIR / "osm"
-
 OUT_DIR: Path = ROOT_DIR / "out"

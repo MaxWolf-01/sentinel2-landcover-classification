@@ -7,11 +7,12 @@ from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from data.download_data import BBox
-from src.configs.label_mappings import LabelMap, GENERAL_MAP
+from data.download_data import BBox, AOIs, DataDirs
+from src.configs.label_mappings import LabelMap, MAPS
 import numpy.typing as npt
+from matplotlib.patches import Patch
 
-from src.configs.paths import SENTINEL_DIR, OSM_DIR
+import argparse
 
 
 def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
@@ -36,7 +37,7 @@ def plot_images(
     images: list[npt.NDArray],
     titles: list[str],
     bbox: BBox | None = None,
-    cmap: ListedColormap | LabelMap | None = None,
+    label_map: LabelMap | None = None,
     p: int | None = None,
 ) -> None:
     """Plots a list of images with their respective titles.
@@ -44,17 +45,19 @@ def plot_images(
         images (List[npt.NDArray]): List of images to be plotted.
         titles (List[str]): Titles for the images.
         bbox (Optional[BBox]): Bounding box information.
-        cmap (Optional[ListedColormap]): Color map for images.
+        label_map (Optional[ListedColormap]): Color map for images.
         p (Optional[int]): Precision for displaying bbox coordinates.
     """
-    cmap = get_color_map(cmap) if isinstance(cmap, dict) else cmap
+    cmap = get_color_map(label_map) if label_map else None
     num_images = len(images)
     fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
     for i, (img, title) in enumerate(zip(images, titles)):
         ax[i].imshow(img, cmap=cmap)
         ax[i].set_title(title)
         ax[i].axis("off")
-
+    if label_map:
+        legend_elements = [Patch(facecolor=label_map[label]["color"], label=label) for label in label_map]
+        plt.legend(handles=legend_elements, loc="upper center", bbox_to_anchor=(-0.15, -0.05), ncol=len(label_map))
     if bbox:
         fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
 
@@ -110,25 +113,44 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
     """
     num_classes = len(label_map)
     colors = ["" for _ in range(num_classes)]
-    for label in label_map.values():
-        colors[label["idx"]] = label["color"]
+    for i, label in enumerate(label_map.values()):
+        colors[i] = label["color"]
     cmap = ListedColormap(colors)
     return cmap
 
 
-def _inspect_mask(n: int, p: int) -> None:
-    s = SENTINEL_DIR / f"{n}.tif"
-    o = OSM_DIR / f"{n}.tif"
-    plot_sentinel_and_mask(sentinel=s, mask=o, label_map=GENERAL_MAP, p=p)
-    plt.show()
-
-
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser()
+    parser.add_argument("--aoi", type=str, default="vie", help=f"Default: VIE. Available: {list(AOIs)}")
+    parser.add_argument("--labels", type=str, default="binary", help=f"Default: Multiclass. Available:{list(MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
+    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
+    sentinel_files = sorted(list(data_dirs.sentinel.glob("*.tif")))
+    mask_files = sorted(list(data_dirs.osm.glob("*.tif")))
 
-    _inspect_mask(n=args.n, p=args.p)
+    index = args.n
+    max_index = len(sentinel_files)
+    print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\nq: quit")
+    while True:
+        index = max(0, min(index, max_index - 1))
+        plot_sentinel_and_mask(
+            sentinel=sentinel_files[index], mask=mask_files[index], label_map=MAPS[args.labels], p=args.p
+        )
+        plt.show(block=False)
+        user_input = input("Input:")
+        match user_input:
+            case "q":
+                plt.close("all")
+                break
+            case "n":
+                index += 1
+            case "b":
+                index -= 1
+            case "N":
+                plt.close("all")
+                index += 1
+            case "B":
+                plt.close("all")
+                index -= 1
