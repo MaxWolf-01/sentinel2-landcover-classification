@@ -31,6 +31,8 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
+    float32_matmul_precision: str
+
     # optimizer
     lr: float
     weight_decay: float
@@ -38,15 +40,6 @@ class TrainConfig:
 
     # loss
     loss_type: typing.Literal["ce", "focal"]
-
-    # lr scheduler
-    use_lr_scheduler: bool
-    lr_scheduler_type: str
-    lr_step_size: int
-    lr_gamma: float
-    weight_decay: float
-
-    float32_matmul_precision: str
 
     # compile
     compile_mode: str
@@ -72,6 +65,13 @@ class TrainConfig:
     label_smoothing: float = 0.0
     focal_loss_alpha: float | None = None
     focal_loss_gamma: float | None = None
+
+    # lr scheduler
+    lr_scheduler_type: typing.Literal["step", "cosine_warm_restarts"] | None = None
+    step_lr_sched_step_size: int | None = None
+    step_lr_sched_gamma: float | None = None
+    cosine_warm_restarts_T_0: int | None = None
+    cosine_warm_restarts_eta_min: float | None = None
 
 
 # TODO these are still initial / example values
@@ -112,15 +112,12 @@ CONFIG = Config(
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
-
+        # loss
         loss_type="focal",
         focal_loss_alpha=0.25,
         focal_loss_gamma=2,
-
-        use_lr_scheduler=False,
-        lr_scheduler_type="StepLR",
-        lr_step_size=10,
-        lr_gamma=0.1,
+        # lr scheduler
+        lr_scheduler_type=None,
     ),
 )
 
