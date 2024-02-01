@@ -178,9 +178,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
         if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
             return
-        print(self.logger)
-        print(isinstance(self.logger, WandbLogger))
-
         class_labels = {i: label for i, label in enumerate(self.label_map)}
         log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
 
@@ -327,7 +324,7 @@ def main() -> None:
     }[(cfg_key := args.type)]
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
-    config.model.num_classes = len(config.datamodule.dataset_cfg.label_map)
+    config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
     config.train.compile_disable = args.no_compile
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
