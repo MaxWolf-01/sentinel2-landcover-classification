@@ -25,6 +25,7 @@ from torch import nn
 
 from configs.label_mappings import MAPS, LabelMap
 from data.download_data import AOIs
+from losses import Loss, get_loss
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
@@ -63,7 +64,8 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 dropout=config.model.fcn_dropout,
             ),
         )
-        self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
+
+        self.loss_fn: Loss = get_loss(config)
         self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
@@ -174,8 +176,10 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
-        if not isinstance(self.logger, WandbLogger) and (not self.config.train.log_img_in_train and mode == "train"):
+        if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
             return
+        print(self.logger)
+        print(isinstance(self.logger, WandbLogger))
 
         class_labels = {i: label for i, label in enumerate(self.label_map)}
         log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
@@ -200,6 +204,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         )
 
 
+# TODO also plot some of the direct input to the model
 def log_segmentation_pred(
     plot_name: str,
     model: pl.LightningModule,
@@ -210,6 +215,7 @@ def log_segmentation_pred(
 ) -> None:
     if idx is None:
         idx = random.randint(0, len(dataloader.dataset) - 1)
+    # todo does this handle train dataloader correctly?
     sample: S2OSMSample = dataloader.dataset[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
@@ -304,7 +310,7 @@ def main() -> None:
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
     parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
-    parser.add_argument("--wandb", action="store_true", help="disable wandb logging.")
+    parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
     parser.add_argument(  # list of tags
         "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )

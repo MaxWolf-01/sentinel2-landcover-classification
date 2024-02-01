@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import typing
 from dataclasses import dataclass
 
 from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
@@ -35,6 +36,9 @@ class TrainConfig:
     weight_decay: float
     betas: tuple[float, float]
 
+    # loss
+    loss_type: typing.Literal["ce", "focal"]
+
     float32_matmul_precision: str
 
     # compile
@@ -56,6 +60,11 @@ class TrainConfig:
     tags: list[str] = dataclasses.field(default_factory=list)
 
     seed: int = 42
+
+    # loss_type specific
+    label_smoothing: float = 0.0
+    focal_loss_alpha: float | None = None
+    focal_loss_gamma: float | None = None
 
 
 # TODO these are still initial / example values
@@ -96,6 +105,9 @@ CONFIG = Config(
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
+        loss_type="focal",
+        focal_loss_alpha=0.25,
+        focal_loss_gamma=2,
     ),
 )
 
