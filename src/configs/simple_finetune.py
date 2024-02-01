@@ -112,11 +112,9 @@ CONFIG = Config(
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
-
         loss_type="focal",
         focal_loss_alpha=0.25,
         focal_loss_gamma=2,
-
         use_lr_scheduler=False,
         lr_scheduler_type="StepLR",
         lr_step_size=10,
