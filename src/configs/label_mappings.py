@@ -29,9 +29,10 @@ MULTICLASS_MAP: LabelMap = {
                 "forestry",
                 "mountain_ridge",
                 "mountain_pass",
+                "greenfield"
             ],
             "natural": True,
-            "leisure": ["park", "garden"],
+            "leisure": ["park", "garden", "pitch", "nature_reserve", "dog_park" ],
         },
     },
     "impervious_surface": {
@@ -40,14 +41,14 @@ MULTICLASS_MAP: LabelMap = {
             "highway": True,
             "building": True,
             "railway": True,
-            "landuse": ["industrial", "commercial", "residential", "retail"],
-            "aeroway": ["aerodrome"],  # TODO could we set true?
-            "amenity": ["parking"],
+            "landuse": ["industrial", "commercial", "residential", "retail", "construction", "impervious_surface", "garages", "railway", "institutional", "brownfield", "depot", " 	landfill", ""],
+            "aeroway": True,
+            "amenity": ["parking", "parking_space"],
         },
     },
     "agriculture": {
         "color": "#f5a142",
-        "osm_tags": {"landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural"]},
+        "osm_tags": {"landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural", "allotments", "paddy", "animal_keeping", " 	flowerbed", "salt_pond"]},
     },
 }
 
