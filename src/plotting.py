@@ -11,7 +11,6 @@ from data.download_data import BBox, AOIs, DataDirs
 from src.configs.label_mappings import LabelMap, MAPS
 import numpy.typing as npt
 from matplotlib.patches import Patch
-
 import argparse
 
 
