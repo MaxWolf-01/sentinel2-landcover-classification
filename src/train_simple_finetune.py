@@ -24,7 +24,9 @@ from torchmetrics import Accuracy
 from torch.optim.lr_scheduler import StepLR
 from torch import nn
 
-from configs.label_mappings import GENERAL_MAP, get_idx_to_label_map
+from configs.label_mappings import MAPS, LabelMap
+from data.download_data import AOIs
+from losses import Loss, get_loss
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
@@ -59,9 +61,13 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 in_channels=config.model.output_embed_dim,
                 out_channels=config.model.fcn_out_channels,
                 num_classes=config.model.num_classes,
+                num_convs=config.model.fcn_num_convs,
+                dropout=config.model.fcn_dropout,
             ),
         )
-        self.loss_fn = nn.CrossEntropyLoss()  # TODO meaningful label smoothing?
+
+        self.loss_fn: Loss = get_loss(config)
+        self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
             "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
@@ -178,10 +184,9 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
-        if not isinstance(self.logger, WandbLogger) and (not self.config.train.log_img_in_train and mode == "train"):
+        if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
             return
-
-        class_labels = get_idx_to_label_map(GENERAL_MAP)
+        class_labels = {i: label for i, label in enumerate(self.label_map)}
         log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
 
         img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
@@ -204,6 +209,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         )
 
 
+# TODO also plot some of the direct input to the model
 def log_segmentation_pred(
     plot_name: str,
     model: pl.LightningModule,
@@ -214,6 +220,7 @@ def log_segmentation_pred(
 ) -> None:
     if idx is None:
         idx = random.randint(0, len(dataloader.dataset) - 1)
+    # todo does this handle train dataloader correctly?
     sample: S2OSMSample = dataloader.dataset[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
@@ -231,24 +238,26 @@ def log_segmentation_pred(
 
 
 def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    normalized_conf_matrix = conf_matrix / row_sums
+
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=np.max(conf_matrix)))
+    cax = ax.matshow(normalized_conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=normalized_conf_matrix.max()))
     fig.colorbar(cax)
 
-    ax.set_title("Confusion Matrix", pad=20)
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
     ax.set_xticks((ticks := np.arange(len(class_labels))))
     ax.set_yticks(ticks)
-    ax.set_xticklabels((label_texts := list(class_labels.values())))
+    ax.set_xticklabels((label_texts := list(class_labels.values())), rotation=45)
     ax.set_yticklabels(label_texts)
-    plt.xticks(rotation=45)
+    plt.tight_layout()
 
-    for (i, j), val in np.ndenumerate(conf_matrix):
-        ax.text(j, i, str(val), ha="center", va="center", color="black")
+    for (i, j), val in np.ndenumerate(normalized_conf_matrix):
+        ax.text(j, i, f"{val:.2f}", ha="center", va="center", color="black")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png")
+    fig.savefig(buf, format="png", bbox_inches="tight")
     buf.seek(0)
     wandb.log({f"{mode}/confusion_matrix": wandb.Image(plt.imread(buf))})
     plt.close(fig)
@@ -301,38 +310,42 @@ def objective(trial: optuna.Trial) -> float:
 
 
 def main() -> None:
-    dotenv.load_dotenv()
-    configs: dict[str, Config] = {
-        "base": cfg.CONFIG,
-        "debug": cfg.DEBUG_CFG,
-        "overfit": cfg.OVERFIT_CFG,
-        "tune": ...,
-    }
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", type=str, default="base", help=f"Specify config. Default: base; Available: {list[configs]}"
+    parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
+    parser.add_argument("--model", type=str, default="base", help="Model prests.")
+    parser.add_argument("--bs", type=int, default=None, help="batch size.")
+    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
+    parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
+    parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
+    parser.add_argument(  # list of tags
+        "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
-    parser.add_argument("--name", type=str, default=None, help="Specify run name prefix. Default: None")
-    parser.add_argument("--wandb", action="store_true", default=False, help="Force wandb logging. Default: False")
-    # list of tags
-    parser.add_argument(
-        "--tags", nargs="+", default=None, help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
-    )
-    parser.add_argument("--compile", action="store_true", default=True, help="Compile model. Default: True")
+    parser.add_argument("--no-compile", action="store_true", help="Compile model. Default: True")
     args = parser.parse_args()
-    cfg_key: str = args.config or "base"
-    config: Config = configs[cfg_key]
-    config.model.num_classes = len(GENERAL_MAP)
-    config.train.compile_disable = not args.compile
-    config.train.use_wandb_logger = config.train.use_wandb_logger or args.wandb
-    config.train.tags.extend(args.tags or [])
+
+    dotenv.load_dotenv()
+
+    config: Config = {
+        "train": cfg.CONFIG,
+        "debug": cfg.debug(cfg.CONFIG),
+        "overfit": cfg.overfit(cfg.CONFIG),
+        "tune": ...,
+    }[(cfg_key := args.type)]
+    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
+    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
+    config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.compile_disable = args.no_compile
+    config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
+    config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
-    if config == "tune":
+    if cfg_key == "tune":
         tune()
     else:
         train(config=config)

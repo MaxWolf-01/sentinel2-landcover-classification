@@ -80,10 +80,10 @@ class FCNHead(nn.Module):
         self,
         num_classes: int,
         in_channels: int,
-        out_channels: int = 256,
-        num_convs: int = 1,
+        out_channels: int,
+        num_convs: int,
+        dropout: float,
         kernel_size: int = 3,
-        dropout_ratio: float = 0.1,
     ) -> None:
         super().__init__()
         self.net = nn.Sequential(
@@ -101,7 +101,7 @@ class FCNHead(nn.Module):
                     nn.ReLU(inplace=True),
                 ]
             ],
-            nn.Dropout2d(dropout_ratio),
+            nn.Dropout2d(dropout),
             nn.Conv2d(out_channels, num_classes, kernel_size=1),
         )
 
@@ -117,20 +117,32 @@ class PrithviSegmentationModel(nn.Module):
         num_frames: int = 1,
     ) -> None:
         super().__init__()
-        # TODO we don't need to load the entire thing if we only want the encoder!!
         self.backbone: MaskedAutoencoderViT = load_prithvi(num_frames=num_frames)
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
+        [
+            delattr(self.backbone, attr)
+            for attr in [  # remove all unused weights from backbone
+                "decoder_embed",
+                "mask_token",
+                "decoder_pos_embed",
+                "decoder_blocks",
+                "decoder_norm",
+                "decoder_pred",
+            ]
+        ]
+
+        freeze_params(self.backbone)
         self.head.apply(initialize_head_or_neck_weights)
         self.neck.apply(initialize_head_or_neck_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Input shape: (B, T, C, H, W); Output shape: (B, num_classes, H, W)"""
-        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
-
+        # no mae mask | features: (B, tokens, emb_d)
+        with torch.no_grad():  # not sure if needed, since all params are no_grad
+            features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)
         neck_output = self.neck(features)
-
         output = self.head(neck_output)
         return output
 
@@ -147,6 +159,11 @@ def initialize_head_or_neck_weights(m: nn.Module) -> None:
         nn.init.xavier_normal_(m.weight)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
+
+
+def freeze_params(m: nn.Module) -> None:
+    for param in m.parameters():
+        param.requires_grad = False
 
 
 if __name__ == "__main__":
