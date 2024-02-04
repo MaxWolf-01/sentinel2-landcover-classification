@@ -18,7 +18,7 @@ MULTICLASS_MAP: LabelMap = {
     },
     "nature": {
         "idx": 1,
-        "color": "#00ff00",
+        "color": "#a12da9",
         "osm_tags": {
             "landuse": [
                 "forest",
@@ -32,7 +32,35 @@ MULTICLASS_MAP: LabelMap = {
                 "greenfield"
             ],
             "natural": True,
-            "leisure": ["park", "garden", "pitch", "nature_reserve", "dog_park" ],
+            "leisure": ["park", "garden", "nature_reserve", "dog_park",  "protected_area"],
+            "waterway": [
+                "river",
+                "stream",
+                "brook",
+                "canal",
+                "drain",
+                "ditch",
+                "riverbank",
+                "waterfall"
+            ],
+            "boundary": [
+                "national_park",
+                "protected_area"
+            ],
+            "wetland": [
+                "bog",
+                "swamp",
+                "marsh",
+                "reedbed",
+                "fen"
+            ],
+            "surface": [
+                "grass",
+                "earth",
+                "mud",
+                "sand",
+                "rock"
+            ]
         },
     },
     "impervious_surface": {
@@ -41,14 +69,36 @@ MULTICLASS_MAP: LabelMap = {
             "highway": True,
             "building": True,
             "railway": True,
-            "landuse": ["industrial", "commercial", "residential", "retail", "construction", "impervious_surface", "garages", "railway", "institutional", "brownfield", "depot", " 	landfill", ""],
+            "landuse": ["industrial", "commercial", "residential", "retail", "construction", "impervious_surface",
+                        "garages", "institutional", "brownfield", "depot", "landfill", "quarry", "military",
+                        "port", "airport"],
             "aeroway": True,
             "amenity": ["parking", "parking_space"],
+            "surface": ["asphalt", "concrete", "paving_stones", "sett", "unhewn_cobblestone", "cobblestone", "metal"],
+            "man_made": ["pier", "wastewater_plant", "water_works", "bridge", "tower", "reservoir_covered"],
+            "public_transport": ["platform"],
+            "tourism": ["attraction", "theme_park", "zoo", "aquarium"],
+            "waterway": ["lock_gate", "dock"],
+            "power": ["substation", "transformer"],
+            "barrier": ["wall", "fence", "retaining_wall", "kerb", "guard_rail", "city_wall"],
+            "leisure": ["pitch", "track", "sports_centre", "swimming_pool"],
+
+
         },
     },
     "agriculture": {
         "color": "#f5a142",
-        "osm_tags": {"landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural", "allotments", "paddy", "animal_keeping", " 	flowerbed", "salt_pond"]},
+        "osm_tags": {
+            "landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural", "agriculture", "allotments", "paddy", "animal_keeping", "flowerbed", "salt_pond"],
+            "leisure": ["garden"],
+            "produce": ["grain", "vegetables", "fruit", "nuts", "oil", "hop", "vine", "tea", "tobacco", "cocoa",
+                        "coffee", "sugar", "rubber", "fiber", "flowers", "herbs", "spices"],
+            "crop": ["wheat", "corn", "rice", "soybean", "barley", "oat", "rye", "potato", "cassava", "sugarcane",
+                     "sunflower", "cotton", "tea", "coffee", "cocoa", "tobacco", "hemp", "linen", "olives", "grapes",
+                     "apples", "oranges", "lemons", "bananas", "mangoes", "tomatoes", "carrots", "onions", "lettuce",
+                     "pumpkins", "nuts", "beans", "peas", "spices", "herbs"],
+
+        },
     },
 }
 

@@ -22,7 +22,7 @@ def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: i
 
 
 def plot_sentinel_mask_and_pred(
-    sentinel: Path, mask: Path, pred_img: npt.NDArray, label_map: LabelMap, p: int | None = None
+        sentinel: Path, mask: Path, pred_img: npt.NDArray, label_map: LabelMap, p: int | None = None
 ) -> None:
     """Plots Sentinel image, mask, and prediction side by side."""
     sentinel_img, sentinel_bbox = load_sentinel_tiff_for_plotting(sentinel, return_bbox=True)
@@ -32,12 +32,32 @@ def plot_sentinel_mask_and_pred(
     )
 
 
+def get_geocoords(x, y, bbox, img_shape):
+    """
+    Convert image pixel coordinates to geographical coordinates.
+
+    Args:
+    - x, y: Pixel coordinates in the image.
+    - bbox: Bounding box with geographical coordinates (west, south, east, north).
+    - img_shape: Shape of the image (height, width).
+
+    Returns:
+    - (lon, lat): Tuple with longitude and latitude.
+    """
+    width, height = img_shape[1], img_shape[0]  # Image dimensions
+    lon_per_pixel = (bbox.east - bbox.west) / width
+    lat_per_pixel = (bbox.north - bbox.south) / height
+    lon = bbox.west + x * lon_per_pixel
+    lat = bbox.south + y * lat_per_pixel
+    return lon, lat
+
+
 def plot_images(
-    images: list[npt.NDArray],
-    titles: list[str],
-    bbox: BBox | None = None,
-    label_map: LabelMap | None = None,
-    p: int | None = None,
+        images: list[npt.NDArray],
+        titles: list[str],
+        bbox: BBox | None = None,
+        label_map: LabelMap | None = None,
+        p: int | None = None,
 ) -> None:
     """Plots a list of images with their respective titles.
     Args:
@@ -49,20 +69,48 @@ def plot_images(
     """
     cmap = get_color_map(label_map) if label_map else None
     num_images = len(images)
-    fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
+    fig, axs = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
+    axs = axs if num_images > 1 else [axs]  # Ensure axs is always a list
+
+    coords_text = fig.text(0.5, 0.01, '', ha='center')
+
+    def format_coord(x, y, ax_index):
+        """Transform image coordinates to geographic coordinates using the bounding box."""
+        ax = axs[ax_index]
+        xdata, ydata = ax.transData.inverted().transform([x, y])
+        x_rel = xdata / ax.get_images()[0].get_size()[0]
+        y_rel = ydata / ax.get_images()[0].get_size()[1]
+        lon = bbox.west + x_rel * (bbox.east - bbox.west)
+        lat = bbox.south + y_rel * (bbox.north - bbox.south)
+        return f"Lon: {lon:.3f}, Lat: {lat:.3f}"
+
+    def on_move(event):
+        for ax_index, ax in enumerate(axs):
+            if event.inaxes == ax:
+                coords = format_coord(event.x, event.y, ax_index)
+                coords_text.set_text(coords)
+                fig.canvas.draw_idle()
+                break
+
+    fig.canvas.mpl_connect('motion_notify_event', on_move)
+
     for i, (img, title) in enumerate(zip(images, titles)):
-        ax[i].imshow(img, cmap=cmap)
-        ax[i].set_title(title)
-        ax[i].axis("off")
+        axs[i].imshow(img, cmap=cmap)
+        axs[i].set_title(title)
+        axs[i].axis("off")
     if label_map:
         legend_elements = [Patch(facecolor=label_map[label]["color"], label=label) for label in label_map]
         plt.legend(handles=legend_elements, loc="upper center", bbox_to_anchor=(-0.15, -0.05), ncol=len(label_map))
-    if bbox:
-        fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
+
+    #if bbox:
+    #   fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
+    plt.show()
+
+
 
 
 def load_sentinel_tiff_for_plotting(
-    file: Path, scale_percentile_threshold: float = 98, return_bbox: bool = False
+        file: Path, scale_percentile_threshold: float = 98, return_bbox: bool = False
 ) -> npt.NDArray | tuple[npt.NDArray, BBox]:
     """Loads and scales a sentinel tiff image for plotting
     Args:
