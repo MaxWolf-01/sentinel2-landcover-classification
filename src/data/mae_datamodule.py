@@ -1,23 +1,21 @@
 from __future__ import annotations
 
-import copy
 import functools
-import random
 from dataclasses import dataclass
 
 import lightning.pytorch as pl
 import torch
 import albumentations as A
 
-from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import get_logger, load_prithvi_mean_std
+from data.mae_dataset import MAEDataset, MAEDatasetConfig
+from src.utils import Subset, get_logger, load_prithvi_mean_std, train_val_test_split
 
 logger = get_logger(__name__)
 
 
 @dataclass
-class S2OSMDatamoduleConfig:
-    dataset_cfg: S2OSMDatasetConfig
+class MAEDatamoduleConfig:
+    dataset_cfg: MAEDatasetConfig
     batch_size: int
     num_workers: int
     pin_memory: bool
@@ -31,9 +29,9 @@ class S2OSMDatamoduleConfig:
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
-    def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
+    def __init__(self, cfg: MAEDatamoduleConfig) -> None:
         super().__init__()
-        self.cfg: S2OSMDatamoduleConfig = cfg
+        self.cfg: MAEDatamoduleConfig = cfg
 
         self.batch_size: int = cfg.batch_size
         self.num_workers: int = cfg.num_workers
@@ -43,9 +41,9 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
 
-        self.train: S2OSMDataset | None = None
-        self.val: S2OSMDataset | None = None
-        self.test: S2OSMDataset | None = None
+        self.train: Subset[MAEDataset] | None = None
+        self.val: Subset[MAEDataset] | None = None
+        self.test: Subset[MAEDataset] | None = None
 
         self.val_batch_size_multiplier: int = cfg.val_batch_size_multiplier
         self.dataloader_partial = functools.partial(
@@ -56,24 +54,8 @@ class S2OSMDatamodule(pl.LightningDataModule):
         )
 
     def setup(self, stage: str | None = None) -> None:
-        dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
-
-        train_len: int = int(self.data_split[0] * len(dataset))
-        val_len: int = int(self.data_split[1] * len(dataset))
-        test_len: int = len(dataset) - train_len - val_len if self.data_split[2] > 0 else 0
-
-        all_indicies: list[int] = list(range(len(dataset)))
-        random.shuffle(all_indicies)
-        train_indices: list[int] = all_indicies[:train_len]
-        val_indices: list[int] = all_indicies[train_len : train_len + val_len]
-        test_indices: list[int] = all_indicies[train_len + val_len :]
-
-        self.train = copy.deepcopy(dataset)
-        self.train.indices = train_indices
-        self.val = copy.deepcopy(dataset)
-        self.val.indices = val_indices
-        self.test = copy.deepcopy(dataset)
-        self.test.indices = test_indices
+        dataset: MAEDataset = MAEDataset(self.cfg.dataset_cfg)
+        self.train, self.test, self.val = train_val_test_split(dataset, self.cfg.data_split, deepcopy=True)
 
         mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
         random_transforms_and_augments = [
@@ -96,7 +78,9 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.val.transform = val_test_transforms
         self.test.transform = val_test_transforms
 
-        logger.info(f"Datamodule setup with {train_len} train, {val_len} val and {test_len} test samples.")
+        logger.info(
+            f"Datamodule setup with {len(self.train)} train, {len(self.val)} val and {len(self.test)} test samples."
+        )
 
     def train_dataloader(self) -> torch.utils.data.DataLoader:
         return self.dataloader_partial(self.train, shuffle=True)

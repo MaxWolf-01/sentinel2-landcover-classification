@@ -29,11 +29,11 @@ from losses import Loss, get_loss
 from lr_schedulers import get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
-from src.configs.simple_finetune import Config
-from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample
+from src.configs.segmentation import Config
+from src.data.s2osm_datamodule import S2OSMDatamodule
+from src.data.s2osm_dataset import S2OSMSample
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
-import src.configs.simple_finetune as cfg
+import src.configs.segmentation as cfg
 from src.utils import get_unique_run_name, get_logger
 from numpy import typing as npt
 
@@ -331,7 +331,7 @@ def main() -> None:
     config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
     config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
-    config.train.compile_disable = args.no_compile
+    config.train.compile_disable = args.no_compile or config.train.compile_disable
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
     config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)

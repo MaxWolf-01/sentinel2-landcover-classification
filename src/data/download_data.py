@@ -56,7 +56,7 @@ LABEL_MAPPINGS: dict[str, LabelMap] = {
 }
 
 
-class DataDirs:
+class S2OSMDataDirs:
     def __init__(self, aoi: str, map_type: str) -> None:
         get_path = lambda x: DATA_DIR / aoi / map_type / x  # noqa: E731
         self.sentinel: Path = get_path("sentinel")
@@ -79,11 +79,11 @@ def main() -> None:
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
 
-    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
+    data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
     data_dirs.osm.mkdir(parents=True, exist_ok=True)
     data_dirs.sentinel.mkdir(parents=True, exist_ok=True)
 
-    segments: list[BBox] = _calculate_segments(aoi, SEGMENT_SIZE)
+    segments: list[BBox] = calculate_segments(aoi, SEGMENT_SIZE)
 
     pool_executor = (
         concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
@@ -115,14 +115,16 @@ def main() -> None:
                     )
 
 
-def _process_segment(segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig, data_dirs: DataDirs) -> None:
-    sentinel_data: npt.NDArray = _fetch_sentinel_data(segment=segment, sh_config=sh_config)
-    _save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dirs.sentinel)
+def _process_segment(
+    segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig, data_dirs: S2OSMDataDirs
+) -> None:
+    sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=sh_config)
+    save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dirs.sentinel)
     osm_data = _fetch_osm_data(segment, tag_mapping=label_map)
     _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)  # other=0
 
 
-def _calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
+def calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     lon_diff = bbox.east - bbox.west
     lat_diff = bbox.north - bbox.south
     lon_segments = int(np.ceil(lon_diff / (segment_size_km / 111)))
@@ -142,7 +144,7 @@ def _calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     return segments
 
 
-def _fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
+def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
     evalscript = _create_evalscript(BANDS)
     bbox: sh.BBox = sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=CRS)
     request = sh.SentinelHubRequest(
@@ -180,7 +182,7 @@ def _create_evalscript(bands: list[str]) -> str:
     """
 
 
-def _save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox, sentinel_dir: Path) -> None:
+def save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox, sentinel_dir: Path) -> None:
     pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
     data = einops.rearrange(data, "h w c -> c h w")
     with rasterio.open(

@@ -6,8 +6,8 @@ from matplotlib import pyplot as plt
 
 from configs.label_mappings import MULTICLASS_MAP
 from configs.paths import OUT_DIR, ROOT_DIR
-from data.s2osmdatamodule import S2OSMDatamodule
-from src.train_simple_finetune import PrithviSegmentationFineTuner
+from data.s2osm_datamodule import S2OSMDatamodule
+from src.train_segmentation import PrithviSegmentationFineTuner
 import lightning.pytorch as pl
 
 

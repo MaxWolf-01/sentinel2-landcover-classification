@@ -4,8 +4,8 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 
-from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
-from src.data.s2osmdataset import S2OSMDatasetConfig
+from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
+from src.data.s2osm_dataset import S2OSMDatasetConfig
 
 
 @dataclass
@@ -98,7 +98,7 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="simple-prithvi-finetune",
+        project_name="frozen-prithvi-segmentation",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),

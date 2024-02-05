@@ -7,7 +7,7 @@ from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from data.download_data import BBox, AOIs, DataDirs
+from data.download_data import BBox, AOIs, S2OSMDataDirs
 from src.configs.label_mappings import LabelMap, MAPS
 import numpy.typing as npt
 from matplotlib.patches import Patch
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
-    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
+    data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
     sentinel_files = sorted(list(data_dirs.sentinel.glob("*.tif")))
     mask_files = sorted(list(data_dirs.osm.glob("*.tif")))
 

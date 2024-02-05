@@ -2,13 +2,14 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from configs.simple_finetune import Config
-from utils import get_logger
+from src.utils import get_logger
+import src.configs.segmentation as segment_cfg
+import src.configs.prithvi_mae_finetune as mae_cfg
 
 logger = get_logger(__name__)
 
 
-def get_lr_scheduler(config: Config, optim: Optimizer) -> LRScheduler | None:
+def get_lr_scheduler(config: mae_cfg.Config | segment_cfg.Config, optim: Optimizer) -> LRScheduler | None:
     match config.train.lr_scheduler_type:
         case "step":
             return torch.optim.lr_scheduler.StepLR(
