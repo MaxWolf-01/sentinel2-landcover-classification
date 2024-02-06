@@ -10,7 +10,7 @@ import torch
 import albumentations as A
 
 from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import get_logger, load_prithvi_mean_std
+from src.utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -28,6 +28,14 @@ class S2OSMDatamoduleConfig:
 
     # transform params
     random_crop_size: int
+
+    # dataset_statistics
+    mean: torch.Tensor = torch.tensor(
+        [799.2815, 992.0511, 844.3999, 3567.4006, 2048.2227, 1259.0723], dtype=torch.float32
+    )
+    std: torch.Tensor = torch.tensor(
+        [1000.5408, 928.0647, 979.9531, 1121.2145, 970.6279, 852.6375], dtype=torch.float32
+    )
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
@@ -55,6 +63,9 @@ class S2OSMDatamodule(pl.LightningDataModule):
             pin_memory=cfg.pin_memory,
         )
 
+        self.mean = cfg.mean
+        self.std = cfg.std
+
     def setup(self, stage: str | None = None) -> None:
         dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
 
@@ -75,18 +86,17 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
-        mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            A.Normalize(mean=self.cfg.mean, std=self.cfg.std),  # Normalize comes last!
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            A.Normalize(mean=self.mean, std=self.std),  # Normalize comes last!
         ]
         train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
