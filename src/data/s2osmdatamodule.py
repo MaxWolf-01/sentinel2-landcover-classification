@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import copy
 import functools
-import os
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 import lightning.pytorch as pl
 import torch
@@ -29,10 +29,6 @@ class S2OSMDatamoduleConfig:
 
     # transform params
     random_crop_size: int
-
-    # dataset_statistics
-    mean: torch.Tensor
-    std: torch.Tensor
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
@@ -60,9 +56,6 @@ class S2OSMDatamodule(pl.LightningDataModule):
             pin_memory=cfg.pin_memory,
         )
 
-        self.mean = cfg.mean
-        self.std = cfg.std
-
     def setup(self, stage: str | None = None) -> None:
         dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
 
@@ -83,29 +76,27 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
-        stats_file_path = str(dataset.data_dirs.base_path) + "\\mean_std.pt"
-        if not os.path.exists(stats_file_path):
-            error_message = (
+        stats_file_path = Path(dataset.data_dirs.base_path) / "mean_std.pt"
+        if not stats_file_path.exists():
+            raise FileNotFoundError(
                 f"Statistics file not found at {stats_file_path} You can create it with the flag: --recompute-mean-std"
             )
-            logger.error(error_message)  # Log the error message
-            raise FileNotFoundError(error_message)
 
         stats = torch.load(stats_file_path)
-        self.mean = stats["mean"]
-        self.std = stats["std"]
+        mean = stats["mean"]
+        std = stats["std"]
 
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            A.Normalize(mean=self.cfg.mean, std=self.cfg.std),  # Normalize comes last!
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            A.Normalize(mean=self.mean, std=self.std),  # Normalize comes last!
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
