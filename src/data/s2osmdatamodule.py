@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import os
 import random
 from dataclasses import dataclass
 
@@ -30,12 +31,8 @@ class S2OSMDatamoduleConfig:
     random_crop_size: int
 
     # dataset_statistics
-    mean: torch.Tensor = torch.tensor(
-        [799.2815, 992.0511, 844.3999, 3567.4006, 2048.2227, 1259.0723], dtype=torch.float32
-    )
-    std: torch.Tensor = torch.tensor(
-        [1000.5408, 928.0647, 979.9531, 1121.2145, 970.6279, 852.6375], dtype=torch.float32
-    )
+    mean: torch.Tensor
+    std: torch.Tensor
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
@@ -86,7 +83,15 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
-        stats = torch.load(str(dataset.data_dirs.base_path) + "\\mean_std.pt")
+        stats_file_path = str(dataset.data_dirs.base_path) + "\\mean_std.pt"
+        if not os.path.exists(stats_file_path):
+            error_message = (
+                f"Statistics file not found at {stats_file_path} You can create it with the flag: --recompute-mean-std"
+            )
+            logger.error(error_message)  # Log the error message
+            raise FileNotFoundError(error_message)
+
+        stats = torch.load(stats_file_path)
         self.mean = stats["mean"]
         self.std = stats["std"]
 
