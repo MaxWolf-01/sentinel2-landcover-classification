@@ -86,6 +86,10 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.test = copy.deepcopy(dataset)
         self.test.indices = test_indices
 
+        stats = torch.load(str(dataset.data_dirs.base_path) + "\\mean_std.pt")
+        self.mean = stats["mean"]
+        self.std = stats["std"]
+
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up

@@ -1,4 +1,3 @@
-# calculate_dataset_statistics.py
 import torch
 from torch.utils.data import DataLoader
 from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
@@ -20,7 +19,7 @@ def calculate_mean_std(aoi: str, label_map: str):
     mean = mean.mean(dim=[0, 2, 3])
     std = std.mean(dim=[0, 2, 3])
 
-    return mean, std
+    torch.save({"mean": mean, "std": std}, str(dataset.data_dirs.base_path) + "\\mean_std.pt")
 
 
 class WelfordsMethod:

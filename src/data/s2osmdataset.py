@@ -6,7 +6,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from data.download_data import DataDirs
+from src.data.download_data import DataDirs
 from src.utils import get_logger
 import albumentations as A
 import numpy.typing as npt
@@ -29,9 +29,9 @@ class S2OSMDataset(Dataset):
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
         self.transform: A.Compose | None = None  # to be set in the datamodule TODO why? can we remove this hack?
-        data_dirs = DataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
-        self.sentinel_files = list(data_dirs.sentinel.glob("*.tif"))
-        self.osm_files = list(data_dirs.osm.glob("*.tif"))
+        self.data_dirs = DataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
+        self.sentinel_files = list(self.data_dirs.sentinel.glob("*.tif"))
+        self.osm_files = list(self.data_dirs.osm.glob("*.tif"))
         assert len(self.sentinel_files) == len(self.osm_files), (
             f"There are different amounts of input data and labels:\n"
             f"Input Data:{len(self.sentinel_files)}\nLabels: {len(self.osm_files)}"

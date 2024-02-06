@@ -348,9 +348,7 @@ def main() -> None:
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     if args.recompute_mean_std:
-        mean, std = calculate_mean_std(args.aoi, args.labels)
-        config.datamodule.dataset_cfg.mean = mean
-        config.datamodule.dataset_cfg.std = std
+        calculate_mean_std(args.aoi, args.labels)
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if cfg_key == "tune":
