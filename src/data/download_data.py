@@ -58,9 +58,9 @@ LABEL_MAPPINGS: dict[str, LabelMap] = {
 
 class DataDirs:
     def __init__(self, aoi: str, map_type: str) -> None:
-        get_path = lambda x: DATA_DIR / aoi / map_type / x  # noqa: E731
-        self.sentinel: Path = get_path("sentinel")
-        self.osm: Path = get_path("osm")
+        self.base_path: Path = DATA_DIR / aoi / map_type
+        self.sentinel: Path = self.base_path / "sentinel"
+        self.osm: Path = self.base_path / "osm"
 
 
 def main() -> None:
