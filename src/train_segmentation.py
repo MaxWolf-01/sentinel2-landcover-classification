@@ -194,6 +194,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
             class_labels=class_labels,
             epoch=self.current_epoch,
         )
+        # todo this doesn't make sense if the indices are shared...
         log_segmentation_pred(
             f"{mode}/fixed_prediction_dynamics",
             model=self,
@@ -215,13 +216,13 @@ def log_segmentation_pred(
 ) -> None:
     if idx is None:
         idx = random.randint(0, len(dataloader.dataset) - 1)
-    # todo does this handle train dataloader correctly?
     sample: S2OSMSample = dataloader.dataset[idx]
     inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
     with torch.inference_mode():
         pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img, bbox = load_sentinel_tiff_for_plotting(dataloader.dataset.sentinel_files[0], return_bbox=True)
-    orig_img = dataloader.dataset.transform[0](image=orig_img)["image"]  # center crop
+    orig_img, bbox = load_sentinel_tiff_for_plotting(dataloader.dataset.dataset.sentinel_files[idx], return_bbox=True)
+    # crop # fixme? when mode=train, it's a random crop not corresponding to the input
+    orig_img = dataloader.dataset.dataset.transform[0](image=orig_img)["image"]
     labels = sample.y.cpu().numpy()
     # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
     masks = {
@@ -274,7 +275,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         # pl.callbacks.BackboneFinetuning(), might be helpful?
     ]
     callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="step")] if config.train.use_wandb_logger else []
-    logger: WandbLogger | None = (
+    logger: WandbLogger | bool = (
         WandbLogger(  # todo use wandb key from env for team entity
             entity=config.train.wandb_entity,
             project=config.train.project_name,
