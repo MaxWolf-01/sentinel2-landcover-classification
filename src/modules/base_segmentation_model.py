@@ -121,7 +121,7 @@ class PrithviSegmentationModel(nn.Module):
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
-        freeze_params(self.backbone)
+        self.backbone.requires_grad_(False)
         self.head.apply(initialize_head_or_neck_weights)
         self.neck.apply(initialize_head_or_neck_weights)
 
@@ -147,11 +147,6 @@ def initialize_head_or_neck_weights(m: nn.Module) -> None:
         nn.init.xavier_normal_(m.weight)
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
-
-
-def freeze_params(m: nn.Module) -> None:
-    for param in m.parameters():
-        param.requires_grad = False
 
 
 if __name__ == "__main__":
