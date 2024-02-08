@@ -28,7 +28,7 @@ class MAEDatamoduleConfig:
     random_crop_size: int
 
 
-class S2OSMDatamodule(pl.LightningDataModule):
+class MAEDatamodule(pl.LightningDataModule):
     def __init__(self, cfg: MAEDatamoduleConfig) -> None:
         super().__init__()
         self.cfg: MAEDatamoduleConfig = cfg
@@ -63,20 +63,20 @@ class S2OSMDatamodule(pl.LightningDataModule):
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
 
         # Avoid data-leakage through augmentation -> aplpy transforms to train, val and test separately
-        self.train.transform = train_transforms
-        self.val.transform = val_test_transforms
-        self.test.transform = val_test_transforms
+        self.train.dataset.transform = train_transforms
+        self.val.dataset.transform = val_test_transforms
+        self.test.dataset.transform = val_test_transforms
 
         logger.info(
             f"Datamodule setup with {len(self.train)} train, {len(self.val)} val and {len(self.test)} test samples."
