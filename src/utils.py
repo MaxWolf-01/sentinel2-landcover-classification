@@ -90,11 +90,13 @@ def load_prithvi_mean_std() -> tuple[list[float], list[float]]:
     return config["data_mean"], config["data_std"]
 
 
-def get_unique_run_name(name: str, postfix: str | None = None) -> str:
-    short_uuid: str = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+def get_unique_run_name(name: str | None, postfix: str | None = None) -> str:
+    run_name = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
     if postfix is not None:
-        return f"{name}_{short_uuid}_{postfix}"
-    return f"{name}_{short_uuid}"
+        run_name += f"_{postfix}"
+    if name is not None:
+        run_name = f"{name}_{run_name}"
+    return run_name
 
 
 Dataset = typing.TypeVar("Dataset", bound=torch.utils.data.Dataset)
