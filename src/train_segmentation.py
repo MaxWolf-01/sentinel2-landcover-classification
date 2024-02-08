@@ -287,6 +287,8 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         if config.train.use_wandb_logger
         else False
     )
+    if logger:
+        wandb.watch(model, log="all", log_freq=10)  # todo set lower after debugging
     trainer: pl.Trainer = pl.Trainer(
         default_root_dir=ROOT_DIR,
         callbacks=callbacks,
