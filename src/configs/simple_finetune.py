@@ -4,14 +4,15 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 
-from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
+from src.data.Datamodule import DatamoduleConfig
 from src.data.s2osmdataset import S2OSMDatasetConfig
+from src.configs.download_config import AOIs
 
 
 @dataclass
 class Config:
     model: ModelConfig
-    datamodule: S2OSMDatamoduleConfig
+    datamodule: DatamoduleConfig
     train: TrainConfig
 
 
@@ -86,8 +87,8 @@ CONFIG = Config(
         fcn_num_convs=1,
         fcn_dropout=0.1,
     ),
-    datamodule=S2OSMDatamoduleConfig(
-        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="multiclass"),
+    datamodule=DatamoduleConfig(
+        dataset_cfg=S2OSMDatasetConfig(aoi=AOIs, label_map="multiclass"),  # Is overwritten by train_simple_finetune.py
         batch_size=32,
         num_workers=1,
         pin_memory=True,

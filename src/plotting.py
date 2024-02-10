@@ -7,12 +7,14 @@ from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from data.download_data import BBox, AOIs, DataDirs
-from src.configs.label_mappings import LabelMap, MAPS
+from src.configs.download_config import BBox, AOIs, DataDirs
+from src.configs.osm_label_mappings import LabelMap, MAPS
 import numpy.typing as npt
 from matplotlib.patches import Patch
 
 import argparse
+
+from src.configs.french_label_mappings import get_cnes_color_map
 
 
 def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
@@ -31,6 +33,18 @@ def plot_sentinel_mask_and_pred(
     plot_images(
         [mask_img, pred_img, sentinel_img], ["Mask", "Prediction", "Sentinel Image"], sentinel_bbox, label_map, p
     )
+
+
+def plot_cnes_land_cover(mask: Path, label_map: dict) -> None:
+    """Plots CNES Land Cover data."""
+    mask_img = load_mask_tiff_for_plotting(mask)  # Assuming this function exists or is adapted for CNES data
+    cmap = get_cnes_color_map()
+
+    plt.figure(figsize=(10, 10))
+    plt.imshow(mask_img, cmap=cmap)
+    plt.colorbar()  # TODO: Add a color bar
+    plt.title("CNES Land Cover Map")
+    plt.show()
 
 
 def plot_images(

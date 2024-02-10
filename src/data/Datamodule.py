@@ -9,15 +9,16 @@ import lightning.pytorch as pl
 import torch
 import albumentations as A
 
-from src.data.s2osmdataset import S2OSMDataset, S2OSMDatasetConfig
+from src.data.S2CNESDataset import S2CNESDataset, S2CNESDatasetConfig
+from src.data.s2osmdataset import S2OSMDatasetConfig, S2OSMDataset
 from src.utils import get_logger, load_prithvi_mean_std
 
 logger = get_logger(__name__)
 
 
 @dataclass
-class S2OSMDatamoduleConfig:
-    dataset_cfg: S2OSMDatasetConfig
+class DatamoduleConfig:
+    dataset_cfg: S2CNESDatasetConfig | S2OSMDatasetConfig
     batch_size: int
     num_workers: int
     pin_memory: bool
@@ -31,9 +32,9 @@ class S2OSMDatamoduleConfig:
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
-    def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
+    def __init__(self, cfg: DatamoduleConfig) -> None:
         super().__init__()
-        self.cfg: S2OSMDatamoduleConfig = cfg
+        self.cfg: DatamoduleConfig = cfg
 
         self.batch_size: int = cfg.batch_size
         self.num_workers: int = cfg.num_workers
@@ -43,9 +44,9 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
 
-        self.train: S2OSMDataset | None = None
-        self.val: S2OSMDataset | None = None
-        self.test: S2OSMDataset | None = None
+        self.train: S2CNESDataset | None = None
+        self.val: S2CNESDataset | None = None
+        self.test: S2CNESDataset | None = None
 
         self.val_batch_size_multiplier: int = cfg.val_batch_size_multiplier
         self.dataloader_partial = functools.partial(
@@ -56,7 +57,12 @@ class S2OSMDatamodule(pl.LightningDataModule):
         )
 
     def setup(self, stage: str | None = None) -> None:
-        dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
+        if isinstance(self.cfg.dataset_cfg, S2CNESDatasetConfig):
+            dataset_class = S2CNESDataset
+        else:
+            dataset_class = S2OSMDataset
+
+        dataset = dataset_class(self.cfg.dataset_cfg)
 
         train_len: int = int(self.data_split[0] * len(dataset))
         val_len: int = int(self.data_split[1] * len(dataset))

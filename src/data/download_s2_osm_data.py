@@ -2,7 +2,6 @@ import argparse
 import concurrent
 import os
 import traceback
-import typing
 from pathlib import Path
 
 import einops
@@ -18,54 +17,24 @@ import numpy.typing as npt
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from src.configs.label_mappings import LabelMap, OSMTagMap, MULTICLASS_MAP, BINARY_MAP, MAPS
-from src.configs.paths import ROOT_DIR, DATA_DIR
-
-
-class BBox(typing.NamedTuple):
-    north: float
-    south: float
-    east: float
-    west: float
-
-    def __str__(self, p: int | None = None) -> str:
-        f = f"{{:.{p}f}}" if p is not None else "{}"
-        return (
-            f"(N: {f.format(self.north)}, S: {f.format(self.south)},"
-            f" E: {f.format(self.east)}, W: {f.format(self.west)})"
-        )
-
-
-AOIs: dict[str, BBox] = {
-    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
-    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
-}
-
-CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
-TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
-# https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
-BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
-RESOLUTION: tuple[int, int] = (512, 512)  # Width and Height in pixels
-SEGMENT_SIZE: int = 25  # Size of segments in km
-
-LABEL_MAPPINGS: dict[str, LabelMap] = {
-    "multi": MULTICLASS_MAP,
-    "binary": BINARY_MAP,
-}
-
-
-class DataDirs:
-    def __init__(self, aoi: str, map_type: str) -> None:
-        get_path = lambda x: DATA_DIR / aoi / map_type / x  # noqa: E731
-        self.sentinel: Path = get_path("sentinel")
-        self.osm: Path = get_path("osm")
+from src.configs.osm_label_mappings import LabelMap, OSMTagMap, MAPS
+from src.configs.download_config import (
+    BBox,
+    BANDS,
+    TIME_INTERVAL,
+    CRS,
+    RESOLUTION,
+    AOIs,
+    DataDirs,
+    SEGMENT_SIZE,
+    DATA_COLLECTION,
+)
+from src.configs.paths import ROOT_DIR
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="vie", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
+    parser.add_argument("--aoi", type=str, default="test", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
     parser.add_argument("--labels", type=str, default="multiclass", help="Specify a label mapping to use.")
     parser.add_argument("--workers", type=int, default=1, help="Specify the number of workers.")
     parser.add_argument("--parallel", action="store_true", help="Use parallel processing.")
@@ -142,8 +111,8 @@ def _calculate_segments(bbox: BBox, segment_size_km: int) -> list[BBox]:
     return segments
 
 
-def _fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig) -> npt.NDArray:
-    evalscript = _create_evalscript(BANDS)
+def _fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig, bands=BANDS) -> npt.NDArray:
+    evalscript = _create_evalscript(bands)
     bbox: sh.BBox = sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=CRS)
     request = sh.SentinelHubRequest(
         evalscript=evalscript,
@@ -232,9 +201,7 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
         gpd.GeoDataFrame: GeoDataFrame with geometry and class label.
     """
     try:
-        osm_data = ox.features_from_bbox(
-            north=segment.north, south=segment.south, east=segment.east, west=segment.west, tags=tags
-        )
+        osm_data = ox.features_from_bbox(bbox=segment, tags=tags)
         osm_data["class"] = class_label_idx
         return osm_data[["geometry", "class"]]
     except ox._errors.InsufficientResponseError:

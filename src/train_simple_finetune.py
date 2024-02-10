@@ -23,15 +23,16 @@ from torchmetrics import JaccardIndex as IoU
 from torchmetrics import Accuracy
 from torch import nn
 
-from configs.label_mappings import MAPS, LabelMap
-from data.download_data import AOIs
+from configs.osm_label_mappings import MAPS, LabelMap
+from configs.download_config import AOIs
 from losses import Loss, get_loss
 from lr_schedulers import get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.simple_finetune import Config
-from src.data.s2osmdatamodule import S2OSMDatamodule
-from src.data.s2osmdataset import S2OSMSample
+from src.data.Datamodule import S2OSMDatamodule
+from src.data.s2osmdataset import S2OSMSample, S2OSMDatasetConfig
+from src.data.S2CNESDataset import S2CNESDatasetConfig
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.simple_finetune as cfg
 from src.utils import get_unique_run_name, get_logger
@@ -80,12 +81,12 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
 
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
-            model=self.net,
-            mode=config.train.compile_mode,
-            fullgraph=config.train.compile_fullgraph,
-            disable=config.train.compile_disable,
-        )
+    #       self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+    #           model=self.net,
+    #           mode=config.train.compile_mode,
+    #           fullgraph=config.train.compile_fullgraph,
+    #           disable=config.train.compile_disable,
+    #       )
 
     def on_fit_start(self) -> None:
         """
@@ -313,6 +314,13 @@ def main() -> None:
     parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
+    parser.add_argument(
+        "--dataset_type",
+        type=str,
+        default=None,
+        help="Dataset type: S2OSM for OSM-based-training or S2CNES for CNES-Landcover-based training.",
+    )
+
     parser.add_argument(  # list of tags
         "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
@@ -327,17 +335,22 @@ def main() -> None:
         "overfit": cfg.overfit(cfg.CONFIG),
         "tune": ...,
     }[(cfg_key := args.type)]
-    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
-    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
-    config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
+
+    if args.dataset_type == "S2OSM":
+        dataset_cfg = S2OSMDatasetConfig(aoi=args.aoi, label_map=args.labels or "multiclass")
+    else:
+        dataset_cfg = S2CNESDatasetConfig(aoi=args.aoi, label_map=args.labels or "multiclass")
+
+    config.datamodule.dataset_cfg = dataset_cfg
+    config.model.num_classes = len(MAPS[dataset_cfg.label_map])
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
     config.train.compile_disable = args.no_compile
-    config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
+    config.train.use_wandb_logger = not args.wandb
     config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
-    script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
+    script_logger.info(f"Using configuration: '{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if cfg_key == "tune":
@@ -348,3 +361,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+# TODO: multiclass/multiclass directory name
