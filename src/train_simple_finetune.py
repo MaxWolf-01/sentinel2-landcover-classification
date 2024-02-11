@@ -310,7 +310,9 @@ def main() -> None:
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--model", type=str, default="base", help="Model prests.")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
-    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument(
+        "--aoi", type=str, default=None, help=f"one of {list(AOIs)}"
+    )  # TODO: Hint that It depends on dataset_type
     parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")

@@ -9,11 +9,11 @@ import sentinelhub as sh
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from src.configs.download_config import BBox, CRS, RESOLUTION, AOIs, DataDirs, SEGMENT_SIZE
+from src.configs.download_config import BBox, CRS, RESOLUTION, AOIs, DataDirs, SEGMENT_SIZE, TIME_INTERVAL
 from src.data.download_s2_osm_data import _calculate_segments, _fetch_sentinel_data
 
 
-def fetch_cnes_land_cover_data(segment: BBox, sh_config: sh.SHConfig, year: int) -> np.ndarray:
+def fetch_cnes_land_cover_data(segment: BBox, sh_config: sh.SHConfig) -> np.ndarray:
     collection_id = "9baa2732-6597-49d2-ae3b-68ba0a5386b2"
     evalscript = """
     //VERSION=3
@@ -34,7 +34,7 @@ def fetch_cnes_land_cover_data(segment: BBox, sh_config: sh.SHConfig, year: int)
         input_data=[
             sh.SentinelHubRequest.input_data(
                 data_collection=sh.DataCollection.define_byoc(collection_id),
-                time_interval=(f"{year}-01-01", f"{year}-12-31"),
+                time_interval=TIME_INTERVAL,
             )
         ],
         responses=[sh.SentinelHubRequest.output_response("default", sh.MimeType.TIFF)],
@@ -77,7 +77,6 @@ def save_data_as_geotiff(data: np.ndarray, output_path: Path, bbox: BBox, is_sen
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--aoi", type=str, default="fr", help="Specify an AOI. Available: {}".format(list(AOIs.keys())))
-    parser.add_argument("--year", type=int, default=2020, help="Specify the year for the CNES Land Cover Map.")
     parser.add_argument("--labels", type=str, default="multiclass", help="Specify a label mapping to use.")
     parser.add_argument("--workers", type=int, default=4, help="Specify the number of workers.")
     args = parser.parse_args()
@@ -97,7 +96,7 @@ def main():
             sentinel_data = _fetch_sentinel_data(segment, sh_config)
             save_data_as_geotiff(sentinel_data, data_dirs.sentinel / f"sentinel_{idx}.tif", segment, is_sentinel=True)
 
-            cnes_data = fetch_cnes_land_cover_data(segment, sh_config, args.year)
+            cnes_data = fetch_cnes_land_cover_data(segment, sh_config)
             save_data_as_geotiff(cnes_data, data_dirs.land_cover / f"cnes_{idx}.tif", segment, is_sentinel=False)
         except Exception as e:
             print(f"Error processing segment {idx}: {e}")
