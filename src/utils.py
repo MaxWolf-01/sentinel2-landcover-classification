@@ -48,6 +48,16 @@ def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
 logger = get_logger(__name__)
 
 
+def load_untrained_prithvi(num_frames: int) -> MaskedAutoencoderViT:
+    with PRITHVI_CONFIG.open("r") as f:
+        config = yaml.safe_load(f)
+    model_args = config["model_args"]
+    model_args["num_frames"] = num_frames
+    model = MaskedAutoencoderViT(**model_args)
+    logger.info("Loaded untrained MaskedAutoencoderViT model.")
+    return model
+
+
 def load_prithvi(
     num_frames: int,
     no_decoder: bool = True,

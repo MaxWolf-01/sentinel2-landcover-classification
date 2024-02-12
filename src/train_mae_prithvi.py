@@ -24,7 +24,7 @@ from modules.prithvi import MaskedAutoencoderViT
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 import src.configs.prithvi_mae_finetune as cfg
-from src.utils import get_unique_run_name, get_logger, load_prithvi
+from src.utils import get_unique_run_name, get_logger, load_prithvi, load_untrained_prithvi
 from numpy import typing as npt
 from src.configs.prithvi_mae_finetune import Config
 
@@ -40,7 +40,11 @@ class PrithviMAETrainer(pl.LightningModule):
         # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
 
-        self.net: MaskedAutoencoderViT = load_prithvi(num_frames=config.model.num_frames, no_decoder=False)
+        self.net: MaskedAutoencoderViT = (
+            load_untrained_prithvi(num_frames=config.model.num_frames)
+            if self.config.train.from_scratch
+            else load_prithvi(num_frames=config.model.num_frames, no_decoder=False)
+        )
 
         # todo SSIM / LPIPS?
         metrics = lambda: {}  # noqa: E731
@@ -248,6 +252,7 @@ def objective(trial: optuna.Trial) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--from-scratch", action="store_true", help="Train without pretrained weights. Default: False")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
@@ -267,6 +272,7 @@ def main() -> None:
         "overfit": cfg.overfit(cfg.CONFIG),
         "tune": ...,
     }[(cfg_key := args.type)]
+    config.train.from_scratch = args.from_scratch
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
     config.train.compile_disable = args.no_compile or config.train.compile_disable

@@ -24,6 +24,8 @@ class ModelConfig:
 class TrainConfig:
     float32_matmul_precision: str
 
+    from_scratch: bool
+
     # optimizer
     lr: float
     weight_decay: float
@@ -74,6 +76,7 @@ CONFIG = Config(
     ),
     train=TrainConfig(
         project_name="prithvi-mae-finetune",
+        from_scratch=False,
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
