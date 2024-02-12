@@ -75,6 +75,7 @@ def load_prithvi(
         delattr(model, attr)
 
     model.load_state_dict(state_dict, strict=False)
+    model.reinitialize_pos_embed()  # apply initialization for the removed (decoder_)pos_embed
     logger.info(f"Loaded pre-trained weights from {PRITHVI_WEIGHTS}")
     logger.info(
         f"The following weights were left randomly initialized: "
