@@ -272,7 +272,7 @@ def main() -> None:
         "overfit": cfg.overfit(cfg.CONFIG),
         "tune": ...,
     }[(cfg_key := args.type)]
-    config.train.from_scratch = args.from_scratch
+    config = cfg.pretrain(config) if args.from_scratch else cfg.finetune(config)
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
     config.train.compile_disable = args.no_compile or config.train.compile_disable

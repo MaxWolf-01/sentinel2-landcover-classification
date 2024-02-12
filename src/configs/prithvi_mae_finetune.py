@@ -77,7 +77,7 @@ CONFIG = Config(
     train=TrainConfig(
         project_name="prithvi-mae-finetune",
         from_scratch=False,
-        lr=1.5e-05,
+        lr=5e-4,
         weight_decay=0.05,
         betas=(0.9, 0.999),
         float32_matmul_precision="high",  # todo set to medium later
@@ -94,6 +94,26 @@ CONFIG = Config(
         lr_scheduler_type=None,
     ),
 )
+
+
+def pretrain(config: Config) -> Config:
+    config.train.from_scratch = True
+    config.datamodule.batch_size = 64  # fits into <24GB vram
+    # https://github.com/facebookresearch/mae/blob/main/PRETRAIN.md
+    config.train.lr = 1.5e-4 * _get_effective_bs(config) / 256
+    return config
+
+
+def finetune(config: Config) -> Config:
+    config.train.from_scratch = False
+    config.datamodule.batch_size = 64
+    # https://github.com/facebookresearch/mae/blob/main/FINETUNE.mdA
+    config.train.lr = 5e-4 * _get_effective_bs(config) / 256
+    return config
+
+
+def _get_effective_bs(config: Config) -> int:
+    return config.datamodule.batch_size * config.train.devices  # * nodes for distributed
 
 
 def debug(config: Config) -> Config:
