@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from configs.simple_finetune import Config
+from configs.segmentation import Config
 import torch.nn.functional as F
 
 Loss = typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor]

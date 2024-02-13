@@ -4,8 +4,8 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 
-from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
-from src.data.s2osmdataset import S2OSMDatasetConfig
+from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
+from src.data.s2osm_dataset import S2OSMDatasetConfig
 
 
 @dataclass
@@ -47,6 +47,8 @@ class TrainConfig:
     compile_disable: bool
 
     # trainer
+    max_epochs: int
+    log_interval: int
     devices: int
     precision: str
     overfit_batches: float
@@ -98,16 +100,18 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="simple-prithvi-finetune",
+        project_name="frozen-prithvi-segmentation",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
-        float32_matmul_precision="medium",
+        float32_matmul_precision="high",  # todo set to medium later
         compile_mode="max-autotune",
         compile_fullgraph=True,
         compile_disable=False,
+        max_epochs=-1,
+        log_interval=50,
         devices=1,
-        precision="bf16-mixed",
+        precision="32-true",  # todo set to bf16 later
         overfit_batches=0.0,
         use_wandb_logger=True,
         tags=["frozen-prithvi"],

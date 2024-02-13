@@ -121,19 +121,7 @@ class PrithviSegmentationModel(nn.Module):
         self.neck: nn.Module = neck
         self.head: nn.Module = head
 
-        [
-            delattr(self.backbone, attr)
-            for attr in [  # remove all unused weights from backbone
-                "decoder_embed",
-                "mask_token",
-                "decoder_pos_embed",
-                "decoder_blocks",
-                "decoder_norm",
-                "decoder_pred",
-            ]
-        ]
-
-        freeze_params(self.backbone)
+        self.backbone.requires_grad_(False)
         self.head.apply(initialize_head_or_neck_weights)
         self.neck.apply(initialize_head_or_neck_weights)
 
@@ -161,21 +149,19 @@ def initialize_head_or_neck_weights(m: nn.Module) -> None:
             nn.init.constant_(m.bias, 0)
 
 
-def freeze_params(m: nn.Module) -> None:
-    for param in m.parameters():
-        param.requires_grad = False
-
-
 if __name__ == "__main__":
 
     def t() -> None:
         m = PrithviSegmentationModel(
             neck=ConvTransformerTokensToEmbeddingNeck(embed_dim=768, output_embed_dim=256),
-            head=FCNHead(num_classes=10, in_channels=256, out_channels=256),
+            head=FCNHead(num_classes=10, in_channels=256, out_channels=256, num_convs=1, dropout=0.1),
         )
         B, T, C, H, W = 2, 1, 6, 224, 224
         x = torch.randn(B, C, T, H, W)
         y = m(x)
         print(y.shape)
+        m = load_prithvi(1, no_decoder=False)
+        loss, pred, mask = m.forward(x)
+        print(loss.shape, pred.shape, mask.shape)
 
     t()
