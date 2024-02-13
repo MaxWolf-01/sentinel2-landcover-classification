@@ -31,7 +31,7 @@ from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
 from src.configs.segmentation import Config
 from src.data.s2osm_datamodule import S2OSMDatamodule
-from src.data.s2osm_dataset import S2OSMSample
+from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
 from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
 import src.configs.segmentation as cfg
 from src.utils import get_unique_run_name, get_logger
@@ -315,10 +315,9 @@ def main() -> None:
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
     parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
+    parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
-    parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
-
     parser.add_argument(  # list of tags
         "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
@@ -347,7 +346,8 @@ def main() -> None:
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
-        calculate_mean_std(args.aoi, args.labels)
+        dataset = S2OSMDataset(config.datamodule.dataset_cfg)
+        calculate_mean_std(dataset, save_path=dataset.data_dirs.base_path / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if cfg_key == "tune":

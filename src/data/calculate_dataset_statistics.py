@@ -1,22 +1,20 @@
+from pathlib import Path
+
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
 from typing import Tuple
 
 
-def calculate_mean_std(aoi: str, label_map: str) -> None:
-    cfg: S2OSMDatasetConfig = S2OSMDatasetConfig(aoi=aoi, label_map=label_map)
-    dataset: S2OSMDataset = S2OSMDataset(cfg)
+def calculate_mean_std(dataset: torch.utils.data.Dataset, save_path: Path) -> None:
     dataloader: DataLoader = DataLoader(dataset, shuffle=False)
-
     welford: WelfordsMethod = WelfordsMethod(dim=(0, 1, 3, 4))
     for batch in tqdm(dataloader):
         data: torch.Tensor = batch.x
         welford.update(data)
     mean, std = welford.finalize(keepdim=False)
-    torch.save({"mean": mean, "std": std}, dataset.data_dirs.base_path / "mean_std.pt")
+    torch.save({"mean": mean, "std": std}, save_path)
 
 
 class WelfordsMethod:

@@ -16,9 +16,10 @@ import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
 
+from data.calculate_dataset_statistics import calculate_mean_std
 from data.download_data import AOIs
 from data.mae_datamodule import MAEDatamodule
-from data.mae_dataset import MAESample
+from data.mae_dataset import MAEDataset, MAESample
 from lr_schedulers import get_lr_scheduler
 from modules.prithvi import MaskedAutoencoderViT
 from plotting import load_sentinel_tiff_for_plotting
@@ -256,6 +257,7 @@ def main() -> None:
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
     parser.add_argument(  # list of tags
@@ -282,6 +284,11 @@ def main() -> None:
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
+
+    if args.recompute_mean_std:
+        script_logger.info("Recomputing mean and std...")
+        dataset = MAEDataset(config.datamodule.dataset_cfg)
+        calculate_mean_std(dataset, save_path=dataset.data_dir / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if cfg_key == "tune":

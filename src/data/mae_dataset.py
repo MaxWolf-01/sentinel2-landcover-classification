@@ -25,12 +25,12 @@ class MAESample(typing.NamedTuple):
 
 
 class MAEDataset(Dataset):
-    transform: A.Compose | None  # to be set in the datamodule
+    transform: A.Compose | None = None  # to be set in the datamodule
 
     def __init__(self, cfg: MAEDatasetConfig) -> None:
         super().__init__()
-        data_dir: Path = get_mae_data_dir(aoi=cfg.aoi)
-        self.sentinel_files = list(data_dir.glob("*.tif"))
+        self.data_dir: Path = get_mae_data_dir(aoi=cfg.aoi)
+        self.sentinel_files = list(self.data_dir.glob("*.tif"))
         assert len(self) > 0, "No data found. Did you run `download_mae_data.py`?"
 
         logger.info(f"Initialized {self} with {len(self)} samples.")

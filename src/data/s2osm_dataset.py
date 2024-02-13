@@ -26,7 +26,7 @@ class S2OSMSample(typing.NamedTuple):
 
 
 class S2OSMDataset(Dataset):
-    transform: A.Compose = A.Compose([])  # to be set in the datamodule
+    transform: A.Compose | None = None  # to be set in the datamodule
 
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
