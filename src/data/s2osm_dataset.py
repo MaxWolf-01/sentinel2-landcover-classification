@@ -26,13 +26,13 @@ class S2OSMSample(typing.NamedTuple):
 
 
 class S2OSMDataset(Dataset):
-    transform: A.Compose  # to be set in the datamodule
+    transform: A.Compose = A.Compose([])  # to be set in the datamodule
 
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
-        data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
-        self.sentinel_files = list(data_dirs.sentinel.glob("*.tif"))
-        self.osm_files = list(data_dirs.osm.glob("*.tif"))
+        self.data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
+        self.sentinel_files = list(self.data_dirs.sentinel.glob("*.tif"))
+        self.osm_files = list(self.data_dirs.osm.glob("*.tif"))
         assert len(self.sentinel_files) == len(self.osm_files), (
             f"There are different amounts of input data and labels:\n"
             f"Input Data:{len(self.sentinel_files)}\nLabels: {len(self.osm_files)}"

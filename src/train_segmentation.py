@@ -36,6 +36,7 @@ from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTr
 import src.configs.segmentation as cfg
 from src.utils import get_unique_run_name, get_logger
 from numpy import typing as npt
+from src.data.calculate_dataset_statistics import calculate_mean_std
 
 script_logger = get_logger(__name__)
 
@@ -288,7 +289,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         else False
     )
     if logger:
-        wandb.watch(model, log="all", log_freq=10)  # todo set lower after debugging
+        logger.watch(model, log="all", log_freq=10)  # todo set lower after debugging
     trainer: pl.Trainer = pl.Trainer(
         default_root_dir=ROOT_DIR,
         callbacks=callbacks,
@@ -313,9 +314,11 @@ def main() -> None:
     parser.add_argument("--model", type=str, default="base", help="Model prests.")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
-    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(MAPS)}")
+    parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
+    parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
+
     parser.add_argument(  # list of tags
         "--tags", nargs="+", default=[], help="Tags for wandb. Default: None. Example usage: --tags t1 t2 t3"
     )
@@ -341,6 +344,10 @@ def main() -> None:
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
+
+    if args.recompute_mean_std:
+        script_logger.info("Recomputing mean and std...")
+        calculate_mean_std(args.aoi, args.labels)
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if cfg_key == "tune":

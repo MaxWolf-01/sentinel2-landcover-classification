@@ -8,7 +8,7 @@ import torch
 import albumentations as A
 
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import Subset, get_logger, load_prithvi_mean_std, train_val_test_split
+from src.utils import Subset, get_logger, train_val_test_split
 
 logger = get_logger(__name__)
 
@@ -57,7 +57,16 @@ class S2OSMDatamodule(pl.LightningDataModule):
         dataset: S2OSMDataset = S2OSMDataset(self.cfg.dataset_cfg)
         self.train, self.test, self.val = train_val_test_split(dataset, self.cfg.data_split, deepcopy=True)
 
-        mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
+        stats_file_path = dataset.data_dirs.base_path / "mean_std.pt"
+        if not stats_file_path.exists():
+            raise FileNotFoundError(
+                f"Statistics file not found at {stats_file_path} You can create it with the flag: --recompute-mean-std"
+            )
+
+        stats = torch.load(stats_file_path)
+        mean = stats["mean"]
+        std = stats["std"]
+
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
