@@ -47,6 +47,8 @@ class TrainConfig:
     compile_disable: bool
 
     # trainer
+    max_epochs: int
+    log_interval: int
     devices: int
     precision: str
     overfit_batches: float
@@ -106,6 +108,8 @@ CONFIG = Config(
         compile_mode="max-autotune",
         compile_fullgraph=True,
         compile_disable=False,
+        max_epochs=-1,
+        log_interval=50,
         devices=1,
         precision="32-true",  # todo set to bf16 later
         overfit_batches=0.0,

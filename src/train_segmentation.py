@@ -49,7 +49,6 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         self.config: Config = config
         # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
-
         self.net: nn.Module = PrithviSegmentationModel(
             num_frames=config.model.num_frames,
             neck=ConvTransformerTokensToEmbeddingNeck(
@@ -66,19 +65,22 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
                 dropout=config.model.fcn_dropout,
             ),
         )
-
         self.loss_fn: Loss = get_loss(config)
         self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
+        task: Literal["binary", "multiclass"] = (
+            "binary" if config.datamodule.dataset_cfg.label_map == "binary" else "multiclass"
+        )
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
-            "iou": IoU(task="multiclass", num_classes=config.model.num_classes),
-            "accuracy": Accuracy(task="multiclass", num_classes=config.model.num_classes),
+            "iou": IoU(task=task, num_classes=config.model.num_classes),
+            "accuracy": Accuracy(task=task, num_classes=config.model.num_classes),
+            "f1": torchmetrics.F1Score(task=task, num_classes=config.model.num_classes),
+            # "f2": torchmetrics.FBetaScore(task=task, num_classes=config.model.num_classes, beta=2.),
         }
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             "train": metrics(),
             "val": metrics(),
         }
-
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
         self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
@@ -292,6 +294,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         logger.watch(model, log="all", log_freq=10)  # todo set lower after debugging
     trainer: pl.Trainer = pl.Trainer(
         default_root_dir=ROOT_DIR,
+        max_epochs=config.train.max_epochs,
         callbacks=callbacks,
         devices=config.train.devices,
         precision=config.train.precision,
@@ -310,11 +313,13 @@ def objective(trial: optuna.Trial) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--model", type=str, default="base", help="Model prests.")
-    parser.add_argument("--bs", type=int, default=None, help="batch size.")
-    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
     parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
+    parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
+    parser.add_argument("--bs", type=int, default=None, help="batch size.")
+    parser.add_argument("--epochs", type=int, default=None, help="Number of epochs. -1 = infinite")
+    parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
+    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
@@ -332,10 +337,12 @@ def main() -> None:
         "overfit": cfg.overfit(cfg.CONFIG),
         "tune": ...,
     }[(cfg_key := args.type)]
-    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
-    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
     config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
+    config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.max_epochs = args.epochs or config.train.max_epochs
+    config.train.log_interval = args.log_interval or config.train.log_interval
     config.train.compile_disable = args.no_compile or config.train.compile_disable
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
     config.train.tags.extend(args.tags)

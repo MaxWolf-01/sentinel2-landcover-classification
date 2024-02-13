@@ -256,6 +256,8 @@ def main() -> None:
     parser.add_argument("--from-scratch", action="store_true", help="Train without pretrained weights. Default: False")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
+    parser.add_argument("--epochs", type=int, default=None, help="Number of epochs. -1 = infinite")
+    parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
     parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
@@ -277,6 +279,8 @@ def main() -> None:
     config = cfg.pretrain(config) if args.from_scratch else cfg.finetune(config)
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.max_epochs = args.epochs or config.train.max_epochs
+    config.train.log_interval = args.log_interval or config.train.log_interval
     config.train.compile_disable = args.no_compile or config.train.compile_disable
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
     config.train.tags.extend(args.tags)
