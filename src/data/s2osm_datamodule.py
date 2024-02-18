@@ -8,6 +8,7 @@ import torch
 import albumentations as A
 
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
+from src.normalization import get_normalization
 from src.utils import Subset, get_logger, train_val_test_split
 
 logger = get_logger(__name__)
@@ -26,6 +27,8 @@ class S2OSMDatamoduleConfig:
 
     # transform params
     random_crop_size: int
+    normalization_type: str  # Type of normalization ('standard', 'per_image_min_max', etc.)
+
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
@@ -66,18 +69,19 @@ class S2OSMDatamodule(pl.LightningDataModule):
         stats = torch.load(stats_file_path)
         mean = stats["mean"]
         std = stats["std"]
+        normalizer = get_normalization(self.cfg.normalization_type, mean, std)
 
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            normalizer
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            normalizer
         ]
         train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
