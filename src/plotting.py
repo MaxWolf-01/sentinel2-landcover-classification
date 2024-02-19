@@ -102,9 +102,9 @@ def plot_images(
         legend_elements = [Patch(facecolor=label_map[label]["color"], label=label) for label in label_map]
         plt.legend(handles=legend_elements, loc="upper center", bbox_to_anchor=(-0.15, -0.05), ncol=len(label_map))
 
-    #if bbox:
-    #   fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
-    plt.show()
+    if bbox:
+       fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
+    # plt.show()
 
 
 
@@ -169,7 +169,7 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--aoi", type=str, default="vie", help=f"Default: VIE. Available: {list(AOIs)}")
-    parser.add_argument("--labels", type=str, default="binary", help=f"Default: Multiclass. Available:{list(MAPS)}")
+    parser.add_argument("--labels", type=str, default="multiclass", help=f"Default: Multiclass. Available:{list(MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     index = args.n
     max_index = len(sentinel_files)
-    print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\nq: quit")
+    print("Press...\nn: next\nb: ba5  ck\nN: next and close\nB: back and close\nq: quit")
     while True:
         index = max(0, min(index, max_index - 1))
         plot_sentinel_and_mask(

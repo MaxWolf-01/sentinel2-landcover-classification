@@ -25,7 +25,6 @@ MULTICLASS_MAP: LabelMap = {
                 "grass",
                 "recreation_ground",
                 "village_green",
-                "meadow",
                 "forestry",
                 "mountain_ridge",
                 "mountain_pass",
@@ -60,10 +59,12 @@ MULTICLASS_MAP: LabelMap = {
                 "mud",
                 "sand",
                 "rock"
-            ]
+            ],
+            "region":["natural_area", "mountain_range"]
         },
     },
     "impervious_surface": {
+        "idx": 2,
         "color": "#646464",
         "osm_tags": {
             "highway": True,
@@ -87,9 +88,10 @@ MULTICLASS_MAP: LabelMap = {
         },
     },
     "agriculture": {
+        "idx": 3,
         "color": "#f5a142",
         "osm_tags": {
-            "landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural", "agriculture", "allotments", "paddy", "animal_keeping", "flowerbed", "salt_pond"],
+            "landuse": ["farmland", "farmyard", "vineyard", "orchard", "agricultural", "agriculture", "allotments", "paddy","meadow", "animal_keeping", "flowerbed", "salt_pond"],
             "leisure": ["garden"],
             "produce": ["grain", "vegetables", "fruit", "nuts", "oil", "hop", "vine", "tea", "tobacco", "cocoa",
                         "coffee", "sugar", "rubber", "fiber", "flowers", "herbs", "spices"],
