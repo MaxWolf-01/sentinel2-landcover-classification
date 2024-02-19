@@ -16,6 +16,7 @@ import sentinelhub as sh
 import geopandas as gpd
 import numpy.typing as npt
 from dotenv import load_dotenv
+from shapely import Polygon, MultiPolygon, Point
 from tqdm import tqdm
 
 from src.configs.label_mappings import LabelMap, OSMTagMap, MULTICLASS_MAP, BINARY_MAP, MAPS
@@ -184,15 +185,15 @@ def _save_sentinel_data_as_geotiff(data: npt.NDArray, idx: int, aoi: BBox, senti
     pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
     data = einops.rearrange(data, "h w c -> c h w")
     with rasterio.open(
-        fp=sentinel_dir / f"{idx}.tif",
-        mode="w",
-        driver="GTiff",
-        height=RESOLUTION[0],
-        width=RESOLUTION[1],
-        count=len(BANDS),
-        dtype=data.dtype,
-        crs=rasterio.crs.CRS().from_epsg(code=CRS.value),
-        transform=rasterio.transform.from_origin(aoi.west, aoi.north, pixel_size_x, pixel_size_y),
+            fp=sentinel_dir / f"{idx}.tif",
+            mode="w",
+            driver="GTiff",
+            height=RESOLUTION[0],
+            width=RESOLUTION[1],
+            count=len(BANDS),
+            dtype=data.dtype,
+            crs=rasterio.crs.CRS().from_epsg(code=CRS.value),
+            transform=rasterio.transform.from_origin(aoi.west, aoi.north, pixel_size_x, pixel_size_y),
     ) as f:
         f.write(data)
 
@@ -242,24 +243,60 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
-def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int) -> None:
+def generate_points_in_polygon(polygon, density=100):
+    minx, miny, maxx, maxy = polygon.bounds
+    x_coords = np.linspace(minx, maxx, num=density)
+    y_coords = np.linspace(miny, maxy, num=density)
+    points = []
+    for x in x_coords:
+        for y in y_coords:
+            point = Point(x, y)
+            if polygon.contains(point):
+                points.append(point)
+    return points
+
+def listPoints(someGeometry):
+    '''List the points in a Polygon in a geometry entry - some polygons are more complex than others, so accommodating for that'''
+    pointList = []
+    try:
+        #Note: might miss parts within parts with this
+        for part in someGeometry:
+            x, y = part.exterior.coords.xy
+            pointList.append(list(zip(x,y)))
+    except:
+        try:
+            x,y = someGeometry.exterior.coords.xy
+            pointList.append(list(zip(x,y)))
+        except:
+            #this will return the geometry as is, enabling you to see if special handling is required - then modify the function as need be
+            pointList.append(someGeometry)
+    return pointList
+def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi, osm_dir: Path, idx: int, other_cls_label: int, density=10) -> None:
     pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
     transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
 
-    shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
-    burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=other_cls_label, dtype="uint8")
-    with rasterio.open(
-        fp=osm_dir / f"{idx}.tif",
-        mode="w",
-        driver="GTiff",
-        height=RESOLUTION[0],
-        width=RESOLUTION[1],
-        count=1,
-        dtype="uint8",
-        crs=gdf.crs,
-        transform=transform,
-    ) as f:
-        f.write_band(1, burned)
+    shapes = []
+    for _, row in gdf.iterrows():
+        geom = row['geometry']
+        if geom.is_valid and not geom.is_empty:
+            if geom.geom_type == 'Polygon':
+                points = geom.apply(lambda x: listPoints(x)).values.tolist()
+                shapes.extend(((point, row['class']) for point in points))
+            elif geom.geom_type == 'MultiPolygon':
+                print('polygon detected, opinion rejected')
+                for poly in geom.geoms:
+                    points = geom.apply(lambda x: listPoints(x)).values.tolist()
+                    shapes.extend(((point, row['class']) for point in points))
+            else:
+                # Handle other geometry types (e.g., Point, LineString) as-is
+                shapes.append((geom, row['class']))
+
+    if shapes:
+        burned = rasterize(shapes=shapes, out_shape=RESOLUTION, transform=transform, fill=other_cls_label,
+                           dtype='uint8', all_touched=True)
+        with rasterio.open(fp=osm_dir / f"{idx}.tif", mode='w', driver='GTiff', height=RESOLUTION[0],
+                           width=RESOLUTION[1], count=1, dtype='uint8', crs=gdf.crs, transform=transform) as f:
+            f.write_band(1, burned)
 
 
 if __name__ == "__main__":
