@@ -1,32 +1,66 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import typing
 from dataclasses import dataclass
+from functools import partial
 
+from torch import nn
+
+from modules.efficientnet_unet import EfficientNetConfig, EfficientnetUnet
+from modules.segmentation import PrithviSegmentationNet, PrithviSegmentationNetConfig
 from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
 from src.data.s2osm_dataset import S2OSMDatasetConfig
+
+ModelConfig = PrithviSegmentationNetConfig | EfficientNetConfig
+
+
+class ModelName(str, enum.Enum):  # enum.StrEnum/enum.auto() not supported <3.11
+    FC_PRITHVI_BACKBONE = "fc-prithvi-backbone"
+    EFFICIENTNET_UNET_B0 = "efficientnet-unet-b0"
+    EFFICIENTNET_UNET_B1 = "efficientnet-unet-b1"
+    EFFICIENTNET_UNET_B2 = "efficientnet-unet-b2"
+    EFFICIENTNET_UNET_B3 = "efficientnet-unet-b3"
+    EFFICIENTNET_UNET_B4 = "efficientnet-unet-b4"
+    EFFICIENTNET_UNET_B5 = "efficientnet-unet-b5"
+    EFFICIENTNET_UNET_B6 = "efficientnet-unet-b6"
+    EFFICIENTNET_UNET_B7 = "efficientnet-unet-b7"
 
 
 @dataclass
 class Config:
-    model: ModelConfig
+    model_name: ModelName
     datamodule: S2OSMDatamoduleConfig
     train: TrainConfig
 
+    model: ModelConfig | None = None  # set in `get_model`
+    num_classes: int | None = None  # dynamically obtained from label map
 
-@dataclass
-class ModelConfig:
-    num_frames: int  # input frames per prediction
-    output_embed_dim: int
-    patch_height: int
-    patch_width: int
-    fcn_out_channels: int
-    fcn_num_convs: int
-    fcn_dropout: float
+    def __post_init__(self) -> None:
+        self.train.tags.append(self.model_name)
+        if self.model_name.startswith("efficientnet-unet"):
+            assert self.datamodule.dataset_cfg.n_time_frames == 1, "EfficientNet-UNet only supports 1 frame input"
+            self.datamodule.dataset_cfg.squeeze_time_dim = True
 
-    num_classes: int | None = None  # set dynamically from dataset tag mapping
-    embed_dim: int = 768  # fixed prithvi output embedding dim
+    def get_model(self) -> nn.Module:
+        assert self.num_classes is not None, "num_classes must be set before calling `get_model`"
+        name_to_model_mapping: dict[
+            ModelName, tuple[partial[ModelConfig], typing.Callable[[ModelConfig], nn.Module]]
+        ] = {
+            ModelName.FC_PRITHVI_BACKBONE: (FC_PRITHVI_BACKBONE, PrithviSegmentationNet),
+            ModelName.EFFICIENTNET_UNET_B0: (EFFICIENTNET_UNET_B0, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B1: (EFFICIENTNET_UNET_B1, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B2: (EFFICIENTNET_UNET_B2, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B3: (EFFICIENTNET_UNET_B3, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B4: (EFFICIENTNET_UNET_B4, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B5: (EFFICIENTNET_UNET_B5, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B6: (EFFICIENTNET_UNET_B6, EfficientnetUnet),
+            ModelName.EFFICIENTNET_UNET_B7: (EFFICIENTNET_UNET_B7, EfficientnetUnet),
+        }
+        model_config_partial, instantiator = name_to_model_mapping[self.model_name]
+        self.model = model_config_partial(num_classes=self.num_classes)
+        return instantiator(self.model)
 
 
 @dataclass
@@ -76,18 +110,9 @@ class TrainConfig:
     cosine_warm_restarts_eta_min: float | None = None
 
 
-# TODO these are still initial / example values
-CONFIG = Config(
-    model=ModelConfig(
-        # model defaults (mostly from crop classification cfg)
-        num_frames=(num_frames := 1),
-        output_embed_dim=ModelConfig.embed_dim * num_frames,
-        patch_height=14,
-        patch_width=14,
-        fcn_out_channels=256,
-        fcn_num_convs=1,
-        fcn_dropout=0.1,
-    ),
+# TODO these are still initial / example values (including model configs etc.)
+BASE_CONFIG = partial(
+    Config,
     datamodule=S2OSMDatamoduleConfig(
         dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="multiclass"),
         batch_size=32,
@@ -100,7 +125,7 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="frozen-prithvi-segmentation",
+        project_name="sentinel-segmentation",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
@@ -114,7 +139,6 @@ CONFIG = Config(
         precision="32-true",  # todo set to bf16 later
         overfit_batches=0.0,
         use_wandb_logger=True,
-        tags=["frozen-prithvi"],
         log_img_in_train=False,
         # loss
         loss_type="focal",
@@ -124,6 +148,29 @@ CONFIG = Config(
         lr_scheduler_type=None,
     ),
 )
+
+# model defaults (mostly from crop classification cfg)
+FC_PRITHVI_BACKBONE = partial(
+    PrithviSegmentationNetConfig,
+    num_frames=1,
+    fcn_out_channels=256,
+    fcn_num_convs=1,
+    fcn_dropout=0.1,
+    frozen_backbone=True,
+)
+
+EFFICIENTNET_UNET_B0 = partial(EfficientNetConfig, in_channels=6, version="b0")
+EFFICIENTNET_UNET_B1 = partial(EfficientNetConfig, in_channels=6, version="b1")
+EFFICIENTNET_UNET_B2 = partial(EfficientNetConfig, in_channels=6, version="b2")
+EFFICIENTNET_UNET_B3 = partial(EfficientNetConfig, in_channels=6, version="b3")
+EFFICIENTNET_UNET_B4 = partial(EfficientNetConfig, in_channels=6, version="b4")
+EFFICIENTNET_UNET_B5 = partial(EfficientNetConfig, in_channels=6, version="b5")
+EFFICIENTNET_UNET_B6 = partial(EfficientNetConfig, in_channels=6, version="b6")
+EFFICIENTNET_UNET_B7 = partial(EfficientNetConfig, in_channels=6, version="b7")
+
+
+def set_run_type(config: Config, run_type: typing.Literal["train", "debug", "overfit"]) -> Config:
+    return {"train": lambda x: x, "debug": debug, "overfit": overfit, "tune": tune}[run_type](config)
 
 
 def debug(config: Config) -> Config:
@@ -143,14 +190,5 @@ def overfit(config: Config) -> Config:
     return config
 
 
-# def large_model(config: Config) -> Config:
-#     config.model.fcn_num_convs = 3
-#     config.model.fcn_out_channels = 512
-#     config.train.tags.append("large-model")
-#     return config
-#
-#
-# def small_model(config: Config) -> Config:
-#     config.model.fcn_out_channels = 128
-#     config.train.tags.append("small-model")
-#     return config
+def tune(config: Config) -> Config:
+    return config

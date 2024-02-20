@@ -1,15 +1,15 @@
 import typing
 from dataclasses import dataclass
 
+import albumentations as A
 import einops
+import numpy.typing as npt
 import rasterio
 import torch
 from torch.utils.data import Dataset
 
 from data.download_data import S2OSMDataDirs
 from src.utils import get_logger
-import albumentations as A
-import numpy.typing as npt
 
 logger = get_logger(__name__)
 
@@ -18,6 +18,8 @@ logger = get_logger(__name__)
 class S2OSMDatasetConfig:
     aoi: str  # vie/test/at/...
     label_map: str  # multiclass/binary
+    n_time_frames: int = 1  # number of time frames to use for a single prediction
+    squeeze_time_dim: bool = False  # if True, output will have shape (c, h, w), else (c, 1, h, w) if n_time_frames == 1
 
 
 class S2OSMSample(typing.NamedTuple):
@@ -30,6 +32,8 @@ class S2OSMDataset(Dataset):
 
     def __init__(self, cfg: S2OSMDatasetConfig) -> None:
         super().__init__()
+        self.n_time_frames: int = cfg.n_time_frames
+        self.squeeeze_time_dim: bool = cfg.squeeze_time_dim
         self.data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
         self.sentinel_files = list(self.data_dirs.sentinel.glob("*.tif"))
         self.osm_files = list(self.data_dirs.osm.glob("*.tif"))
@@ -57,7 +61,9 @@ class S2OSMDataset(Dataset):
             osm_data = transformed["mask"]
             sentinel_data = einops.rearrange(sentinel_data, "h w c -> c h w")
 
-        sentinel_tensor = torch.from_numpy(sentinel_data).float().unsqueeze(1)  # add time dim (1, for now)
+        sentinel_tensor = torch.from_numpy(sentinel_data).float()
+        sentinel_tensor = (
+            sentinel_tensor.unsqueeze(1) if not self.squeeeze_time_dim and self.n_time_frames == 1 else sentinel_tensor
+        )
         osm_tensor = torch.from_numpy(osm_data).long()
-
         return S2OSMSample(x=sentinel_tensor, y=osm_tensor)

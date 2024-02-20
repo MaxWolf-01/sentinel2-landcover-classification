@@ -9,73 +9,55 @@ import random
 from typing import Any, Literal
 
 import dotenv
-import numpy as np
 import lightning.pytorch as pl
+import matplotlib.pyplot as plt
+import numpy as np
 import optuna
 import torch
 import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
-import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
-from torchmetrics.classification import MulticlassConfusionMatrix
-from torchmetrics import JaccardIndex as IoU
-from torchmetrics import Accuracy
+from numpy import typing as npt
 from torch import nn
+from torchmetrics import Accuracy, JaccardIndex as IoU
+from torchmetrics.classification import MulticlassConfusionMatrix
 
-from configs.label_mappings import MAPS, LabelMap
+import src.configs.segmentation as cfg
+from configs.label_mappings import LabelMap, MAPS
 from data.download_data import AOIs
 from losses import Loss, get_loss
 from lr_schedulers import get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting
-from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
+from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from src.configs.segmentation import Config
+from src.data.calculate_dataset_statistics import calculate_mean_std
 from src.data.s2osm_datamodule import S2OSMDatamodule
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
-from src.modules.base_segmentation_model import PrithviSegmentationModel, ConvTransformerTokensToEmbeddingNeck, FCNHead
-import src.configs.segmentation as cfg
-from src.utils import get_unique_run_name, get_logger
-from numpy import typing as npt
-from src.data.calculate_dataset_statistics import calculate_mean_std
+from src.utils import get_logger, get_unique_run_name
 
 script_logger = get_logger(__name__)
 
 Mode = Literal["train", "val", "test"]
 
 
-class PrithviSegmentationFineTuner(pl.LightningModule):
+class SegmentationModule(pl.LightningModule):
     def __init__(self, config: Config, optuna_trial: optuna.Trial | None = None) -> None:
         super().__init__()
         self.config: Config = config
-        # If u pass asdict(config), we can't load ckpt w/o passing config; Can't log w log_hyperparams bc no logger yet
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
-        self.net: nn.Module = PrithviSegmentationModel(
-            num_frames=config.model.num_frames,
-            neck=ConvTransformerTokensToEmbeddingNeck(
-                embed_dim=config.model.embed_dim * config.model.num_frames,
-                output_embed_dim=config.model.output_embed_dim,
-                patch_height=config.model.patch_height,
-                patch_width=config.model.patch_width,
-            ),
-            head=FCNHead(
-                in_channels=config.model.output_embed_dim,
-                out_channels=config.model.fcn_out_channels,
-                num_classes=config.model.num_classes,
-                num_convs=config.model.fcn_num_convs,
-                dropout=config.model.fcn_dropout,
-            ),
-        )
+        self.net: nn.Module = config.get_model()
         self.loss_fn: Loss = get_loss(config)
         self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
         task: Literal["binary", "multiclass"] = (
             "binary" if config.datamodule.dataset_cfg.label_map == "binary" else "multiclass"
         )
         metrics = lambda: {  # noqa: E731
-            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.model.num_classes),
-            "iou": IoU(task=task, num_classes=config.model.num_classes),
-            "accuracy": Accuracy(task=task, num_classes=config.model.num_classes),
-            "f1": torchmetrics.F1Score(task=task, num_classes=config.model.num_classes),
-            # "f2": torchmetrics.FBetaScore(task=task, num_classes=config.model.num_classes, beta=2.),
+            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.num_classes),
+            "iou": IoU(task=task, num_classes=config.num_classes),
+            "accuracy": Accuracy(task=task, num_classes=config.num_classes),
+            "f1": torchmetrics.F1Score(task=task, num_classes=config.num_classes),
+            # "f2": torchmetrics.FBetaScore(task=task, num_classes=config.num_classes, beta=2.),
         }
         self.metrics: dict[Mode, dict[str, torchmetrics.Metric]] = {
             "train": metrics(),
@@ -83,7 +65,7 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         }
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-        self.net: PrithviSegmentationModel = torch.compile(  # type: ignore
+        self.net: nn.Module = torch.compile(  # type: ignore
             model=self.net,
             mode=config.train.compile_mode,
             fullgraph=config.train.compile_fullgraph,
@@ -91,10 +73,8 @@ class PrithviSegmentationFineTuner(pl.LightningModule):
         )
 
     def on_fit_start(self) -> None:
-        """
-        This hook is called at the very beginning of the fit process.
-        It is used  to move all metrics to the appropriate device.
-        """
+        if isinstance(self.logger, WandbLogger):
+            self.logger.log_hyperparams(dataclasses.asdict(self.config))
         for mode_metrics in self.metrics.values():
             for metric in mode_metrics.values():
                 metric.to(self.device)
@@ -263,7 +243,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
 
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
-    model: PrithviSegmentationFineTuner = PrithviSegmentationFineTuner(config, optuna_trial=trial)
+    model: SegmentationModule = SegmentationModule(config, optuna_trial=trial)
     datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule)
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(
@@ -313,7 +293,7 @@ def objective(trial: optuna.Trial) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="base", help="Model prests.")
+    parser.add_argument("--model", type=str, required=True, help=f"Model type. One of: {list(cfg.ModelName)}")
     parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
@@ -331,14 +311,11 @@ def main() -> None:
 
     dotenv.load_dotenv()
 
-    config: Config = {
-        "train": cfg.CONFIG,
-        "debug": cfg.debug(cfg.CONFIG),
-        "overfit": cfg.overfit(cfg.CONFIG),
-        "tune": ...,
-    }[(cfg_key := args.type)]
-    config.model.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
+    config: Config = cfg.BASE_CONFIG(model_name=args.model)
+    config = cfg.set_run_type(config, args.type)
+    config.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
     config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.model_name = args.model or config.model_name
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
     config.train.max_epochs = args.epochs or config.train.max_epochs
@@ -349,7 +326,7 @@ def main() -> None:
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
-    script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")
+    script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
@@ -357,7 +334,7 @@ def main() -> None:
         calculate_mean_std(dataset, save_path=dataset.data_dirs.base_path / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
-    if cfg_key == "tune":
+    if args.type == "tune":
         tune()
     else:
         train(config=config)

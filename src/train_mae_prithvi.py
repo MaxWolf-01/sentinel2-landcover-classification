@@ -64,10 +64,8 @@ class PrithviMAETrainer(pl.LightningModule):
         )
 
     def on_fit_start(self) -> None:
-        """
-        This hook is called at the very beginning of the fit process.
-        It is used  to move all metrics to the appropriate device.
-        """
+        if isinstance(self.logger, WandbLogger):
+            self.logger.log_hyperparams(dataclasses.asdict(self.config))
         for mode_metrics in self.metrics.values():
             for metric in mode_metrics.values():
                 metric.to(self.device)
