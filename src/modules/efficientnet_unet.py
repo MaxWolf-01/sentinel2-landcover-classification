@@ -13,9 +13,6 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 
-# TODO weight initialization
-
-
 @dataclass
 class EfficientNetConfig:
     version: typing.Literal["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]
@@ -119,6 +116,7 @@ class EfficientnetUnet(nn.Module):
             self.input_up_conv: nn.ConvTranspose2d = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
             self.input_double_conv: nn.Sequential = _double_conv(self.size[4], 32)
         self.out_conv1x1: nn.Conv2d = nn.Conv2d(self.size[5], config.num_classes, kernel_size=1)
+        self.apply(init_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
@@ -394,6 +392,20 @@ def _drop_connect(inputs: torch.Tensor, drop_connect_rate: float, training: bool
     binary_tensor = torch.floor(random_tensor)
     output = inputs / keep_prob * binary_tensor
     return output
+
+
+def init_weights(m: nn.Module) -> None:
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+        nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.BatchNorm2d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.Linear):
+        nn.init.xavier_normal_(m.weight)
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 
 
 def _test() -> None:
