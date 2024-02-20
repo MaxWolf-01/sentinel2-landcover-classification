@@ -192,16 +192,25 @@ class MaskedAutoencoderViT(nn.Module):
 
         self.initialize_weights()
 
+    def reinitialize_pos_embed(self):
+        pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
+        self.pos_embed.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        if hasattr(self, "decoder_pos_embed"):
+            decoder_pos_embed = get_3d_sincos_pos_embed(
+                self.decoder_pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True
+            )
+            self.decoder_pos_embed.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
+
     def initialize_weights(self):
         # initialization
         # initialize (and freeze) pos_embed by sin-cos embedding
         pos_embed = get_3d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        self.pos_embed.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
         decoder_pos_embed = get_3d_sincos_pos_embed(
             self.decoder_pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True
         )
-        self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
+        self.decoder_pos_embed.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
 
         # initialize patch_embed like nn.Linear (instead of nn.Conv2d)
         w = self.patch_embed.proj.weight.data

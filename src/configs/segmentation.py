@@ -4,8 +4,8 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 
-from src.data.s2osmdatamodule import S2OSMDatamoduleConfig
-from src.data.s2osmdataset import S2OSMDatasetConfig
+from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
+from src.data.s2osm_dataset import S2OSMDatasetConfig
 
 
 @dataclass
@@ -31,6 +31,8 @@ class ModelConfig:
 
 @dataclass
 class TrainConfig:
+    float32_matmul_precision: str
+
     # optimizer
     lr: float
     weight_decay: float
@@ -39,21 +41,14 @@ class TrainConfig:
     # loss
     loss_type: typing.Literal["ce", "focal"]
 
-    # lr scheduler
-    use_lr_scheduler: bool
-    lr_scheduler_type: str
-    lr_step_size: int
-    lr_gamma: float
-    weight_decay: float
-
-    float32_matmul_precision: str
-
     # compile
     compile_mode: str
     compile_fullgraph: bool
     compile_disable: bool
 
     # trainer
+    max_epochs: int
+    log_interval: int
     devices: int
     precision: str
     overfit_batches: float
@@ -72,6 +67,13 @@ class TrainConfig:
     label_smoothing: float = 0.0
     focal_loss_alpha: float | None = None
     focal_loss_gamma: float | None = None
+
+    # lr scheduler
+    lr_scheduler_type: typing.Literal["step", "cosine_warm_restarts"] | None = None
+    step_lr_sched_step_size: int | None = None
+    step_lr_sched_gamma: float | None = None
+    cosine_warm_restarts_T_0: int | None = None
+    cosine_warm_restarts_eta_min: float | None = None
 
 
 # TODO these are still initial / example values
@@ -98,29 +100,28 @@ CONFIG = Config(
         random_crop_size=224,
     ),
     train=TrainConfig(
-        project_name="simple-prithvi-finetune",
+        project_name="frozen-prithvi-segmentation",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
-        float32_matmul_precision="medium",
+        float32_matmul_precision="high",  # todo set to medium later
         compile_mode="max-autotune",
         compile_fullgraph=True,
         compile_disable=False,
+        max_epochs=-1,
+        log_interval=50,
         devices=1,
-        precision="bf16-mixed",
+        precision="32-true",  # todo set to bf16 later
         overfit_batches=0.0,
         use_wandb_logger=True,
         tags=["frozen-prithvi"],
         log_img_in_train=False,
-
+        # loss
         loss_type="focal",
         focal_loss_alpha=0.25,
         focal_loss_gamma=2,
-
-        use_lr_scheduler=False,
-        lr_scheduler_type="StepLR",
-        lr_step_size=10,
-        lr_gamma=0.1,
+        # lr scheduler
+        lr_scheduler_type=None,
     ),
 )
 
