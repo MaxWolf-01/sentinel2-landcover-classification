@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 import logging
-import string
 import random
+import string
 import typing
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from src.configs.paths import PRE_TRAINED_WEIGHTS_DIR, CONFIG_DIR
+from src.configs.paths import CONFIG_DIR, LOG_DIR, PRE_TRAINED_WEIGHTS_DIR
 from src.modules.prithvi import MaskedAutoencoderViT
 
 PRITHVI_WEIGHTS: Path = PRE_TRAINED_WEIGHTS_DIR / "Prithvi_100M.pt"
@@ -19,7 +19,7 @@ PRITHVI_CONFIG: Path = CONFIG_DIR / "prithvi_config.yaml"
 
 
 def get_logger(name: str, log_level: int = logging.INFO) -> logging.Logger:
-    log_directory = Path(__file__).parent.parent / "logs" / "system"
+    log_directory = LOG_DIR / "system"
     log_directory.mkdir(parents=True, exist_ok=True)
 
     log_filename = f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.log'
