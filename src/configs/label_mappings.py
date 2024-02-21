@@ -4,7 +4,6 @@ OSMTagMap = dict[str, str | bool]  # collection of osm tags, see parameter tags 
 
 
 class LabelEntry(typing.TypedDict):
-    idx: int
     color: str
     osm_tags: OSMTagMap
 
@@ -25,6 +24,7 @@ MULTICLASS_MAP: LabelMap = {
                 "recreation_ground",
                 "village_green",
                 "forestry",
+                "meadow",
                 "mountain_ridge",
                 "mountain_pass",
                 "greenfield",
@@ -85,12 +85,10 @@ MULTICLASS_MAP: LabelMap = {
                 "agriculture",
                 "allotments",
                 "paddy",
-                "meadow",
                 "animal_keeping",
                 "flowerbed",
                 "salt_pond",
             ],
-            "leisure": ["garden"],
             "produce": [
                 "grain",
                 "vegetables",
@@ -110,44 +108,7 @@ MULTICLASS_MAP: LabelMap = {
                 "herbs",
                 "spices",
             ],
-# TODO simply set `crop: True?`
-            "crop": [
-                "wheat",
-                "corn",
-                "rice",
-                "soybean",
-                "barley",
-                "oat",
-                "rye",
-                "potato",
-                "cassava",
-                "sugarcane",
-                "sunflower",
-                "cotton",
-                "tea",
-                "coffee",
-                "cocoa",
-                "tobacco",
-                "hemp",
-                "linen",
-                "olives",
-                "grapes",
-                "apples",
-                "oranges",
-                "lemons",
-                "bananas",
-                "mangoes",
-                "tomatoes",
-                "carrots",
-                "onions",
-                "lettuce",
-                "pumpkins",
-                "nuts",
-                "beans",
-                "peas",
-                "spices",
-                "herbs",
-            ],
+            "crop": True,
         },
     },
 }
