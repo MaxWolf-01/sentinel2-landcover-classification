@@ -40,7 +40,6 @@ MULTICLASS_MAP: LabelMap = {
         },
     },
     "impervious_surface": {
-        "idx": 2,
         "color": "#646464",
         "osm_tags": {
             "highway": True,
