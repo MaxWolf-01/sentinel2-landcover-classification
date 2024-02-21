@@ -113,6 +113,7 @@ MULTICLASS_MAP: LabelMap = {
                 "herbs",
                 "spices",
             ],
+# TODO simply set `crop: True?`
             "crop": [
                 "wheat",
                 "corn",
