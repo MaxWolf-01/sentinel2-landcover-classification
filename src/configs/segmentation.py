@@ -98,6 +98,7 @@ CONFIG = Config(
         val_batch_size_multiplier=2,
         # transforms
         random_crop_size=224,
+        normalization_type="per_image_min_max"
     ),
     train=TrainConfig(
         project_name="frozen-prithvi-segmentation",

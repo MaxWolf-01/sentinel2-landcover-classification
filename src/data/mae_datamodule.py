@@ -7,7 +7,8 @@ import lightning.pytorch as pl
 import torch
 import albumentations as A
 
-from data.mae_dataset import MAEDataset, MAEDatasetConfig
+from src.data.mae_dataset import MAEDataset, MAEDatasetConfig
+from src.normalization import get_normalization
 from src.utils import Subset, get_logger, load_prithvi_mean_std, train_val_test_split
 
 logger = get_logger(__name__)
@@ -26,6 +27,7 @@ class MAEDatamoduleConfig:
 
     # transform params
     random_crop_size: int
+    normalization_type: str  # Type of normalization ('standard', 'per_image_min_max', etc.)
 
 
 class MAEDatamodule(pl.LightningDataModule):
@@ -58,17 +60,19 @@ class MAEDatamodule(pl.LightningDataModule):
         self.train, self.test, self.val = train_val_test_split(dataset, self.cfg.data_split, deepcopy=True)
 
         mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
+        normalizer = get_normalization(self.cfg.normalization_type, mean, std)
+
         random_transforms_and_augments = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            normalizer
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            normalizer
         ]
         train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
