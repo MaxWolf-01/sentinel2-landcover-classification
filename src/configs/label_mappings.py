@@ -17,7 +17,6 @@ MULTICLASS_MAP: LabelMap = {
         "osm_tags": {},
     },
     "nature": {
-        "idx": 1,
         "color": "#00ff00",
         "osm_tags": {
             "landuse": [
