@@ -8,14 +8,16 @@ import random
 from typing import Any, Literal
 
 import dotenv
-import numpy as np
 import lightning.pytorch as pl
+import numpy as np
 import optuna
 import torch
 import torchmetrics
 import wandb
 from lightning.pytorch.loggers import WandbLogger
+from numpy import typing as npt
 
+import src.configs.prithvi_mae_finetune as cfg
 from data.calculate_dataset_statistics import calculate_mean_std
 from data.download_data import AOIs
 from data.mae_datamodule import MAEDatamodule
@@ -23,11 +25,9 @@ from data.mae_dataset import MAEDataset, MAESample
 from lr_schedulers import get_lr_scheduler
 from modules.prithvi import MaskedAutoencoderViT
 from plotting import load_sentinel_tiff_for_plotting
-from src.configs.paths import LOG_DIR, ROOT_DIR, CKPT_DIR
-import src.configs.prithvi_mae_finetune as cfg
-from src.utils import get_unique_run_name, get_logger, load_prithvi, load_untrained_prithvi
-from numpy import typing as npt
+from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from src.configs.prithvi_mae_finetune import Config
+from src.utils import get_logger, get_unique_run_name, load_prithvi, load_untrained_prithvi
 
 script_logger = get_logger(__name__)
 
@@ -150,29 +150,32 @@ class PrithviMAETrainer(pl.LightningModule):
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
-        if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
+        if not isinstance(self.logger, WandbLogger):
             return
 
-        img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
-        dataloader = self.trainer.train_dataloader if mode == "train" else self.trainer.val_dataloaders
-        self.log_image_masked_and_reconstructed(
-            dataloader=dataloader,
+        dataset: MAEDataset = self.trainer.val_dataloaders.dataset.dataset
+        if mode == "train":
+            center_crop_transform = dataset.transform
+            dataset = self.trainer.train_dataloader.dataset.dataset
+            dataset.transform = center_crop_transform
+        self._log_image_masked_and_reconstructed(
+            dataset=dataset,
             mode=mode,
-            idx=img_idx,
+            idx=None,  # random sample
         )
-        # log_image_masked_and_reconstructed()
+        # log_image_masked_and_reconstructed() # todo fixed
 
     # TODO improve this plot: e.g. -) masked original image or reconstrcuted image patches merged with unmasked ones
-    def log_image_masked_and_reconstructed(
+    def _log_image_masked_and_reconstructed(
         self,
-        dataloader: torch.utils.data.DataLoader,
+        dataset: MAEDataset,
         mode: Mode,
         idx: int | None = None,
         prefix: str = "",
     ) -> None:
         if idx is None:
-            idx = random.randint(0, len(dataloader.dataset) - 1)
-        model_input: torch.Tensor = dataloader.dataset[idx].x
+            idx = random.randint(0, len(dataset) - 1)
+        model_input: torch.Tensor = dataset[idx].x
 
         with torch.inference_mode():
             loss, logits, mask = self(model_input.unsqueeze(0).to(self.device))
@@ -180,11 +183,9 @@ class PrithviMAETrainer(pl.LightningModule):
         pred_image = pred_image[:3, 0, ...]  # remove time dim and keep only RGB channels
         pred_image = pred_image[[2, 1, 0], ...]  # BGR to RGB
 
-        original_image, bbox = load_sentinel_tiff_for_plotting(
-            dataloader.dataset.dataset.sentinel_files[idx], return_bbox=True
-        )
-        # crop # fixme? when mode=train, it's a random crop not corresponding to the input
-        original_image = dataloader.dataset.dataset.transform[0](image=original_image)["image"]
+        original_image, bbox = load_sentinel_tiff_for_plotting(dataset.sentinel_files[idx], return_bbox=True)
+        original_image = dataset.transform[0](image=original_image)["image"]  # crop only, no normalization
+
         # mask = einops.rearrange(mask, '1 (h w) -> h w 1', h=14, w=14)
         # 224x224 & 16x16 patches -> 14x14 grid
         # mask= einops.repeat(mask, "1 (h w) -> (rep_h h) (rep_w w) (rep_c 1)", h=14, w=14, rep_h=16, rep_w=16, rep_c=3)
@@ -266,8 +267,6 @@ def main() -> None:
     parser.add_argument("--no-compile", action="store_true", help="Compile model. Default: True")
     args = parser.parse_args()
 
-    dotenv.load_dotenv()
-
     config: Config = {
         "train": cfg.CONFIG,
         "debug": cfg.debug(cfg.CONFIG),
@@ -283,6 +282,7 @@ def main() -> None:
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
     config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
+    dotenv.load_dotenv()
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"USING CONFIG: '{cfg_key}':\n{pprint.pformat(dataclasses.asdict(config))}")

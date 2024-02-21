@@ -162,58 +162,56 @@ class SegmentationModule(pl.LightningModule):
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
     def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
-        if not isinstance(self.logger, WandbLogger) or (not self.config.train.log_img_in_train and mode == "train"):
+        if not isinstance(self.logger, WandbLogger):
             return
-        class_labels = {i: label for i, label in enumerate(self.label_map)}
+        # confusion matrix
+        class_labels: dict[int, str] = {i: label for i, label in enumerate(self.label_map)}
         log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
-
-        img_idx = random.randint(0, len(self.trainer.train_dataloader.dataset) - 1) if mode == "train" else 0
-        dataloader = self.trainer.train_dataloader if mode == "train" else self.trainer.val_dataloaders
-        log_segmentation_pred(
+        # segmentation predictions
+        dataset: S2OSMDataset = self.trainer.val_dataloaders.dataset.dataset
+        if mode == "train":
+            center_crop_transform = dataset.transform
+            dataset = self.trainer.train_dataloader.dataset.dataset
+            dataset.transform = center_crop_transform
+        self._log_segmentation_pred(
             f"{mode}/segmentation",
-            model=self,
-            dataloader=dataloader,
-            idx=img_idx,
+            dataset=dataset,
+            idx=None,  # random
             class_labels=class_labels,
-            epoch=self.current_epoch,
         )
-        # todo this doesn't make sense if the indices are shared...
-        log_segmentation_pred(
+        self._log_segmentation_pred(
             f"{mode}/fixed_prediction_dynamics",
-            model=self,
-            dataloader=dataloader,
-            idx=img_idx,
+            dataset=dataset,
+            idx=0,
             class_labels=class_labels,
-            epoch=self.current_epoch,
         )
 
+    def _log_segmentation_pred(
+        self,
+        plot_name: str,
+        dataset: S2OSMDataset,
+        class_labels: dict[int, str],
+        idx: int | None = None,
+    ) -> None:
+        if idx is None:
+            idx = random.randint(0, len(dataset) - 1)
+        sample: S2OSMSample = dataset[idx]
+        inp = sample.x.unsqueeze(0).to(self.device)  # (1,c,t,h,w)
+        with torch.inference_mode():
+            pred = self(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
 
-# TODO also plot some of the direct input to the model
-def log_segmentation_pred(
-    plot_name: str,
-    model: pl.LightningModule,
-    dataloader: torch.utils.data.DataLoader,
-    class_labels: dict[int, str],
-    idx: int | None = None,
-    epoch: int | None = None,
-) -> None:
-    if idx is None:
-        idx = random.randint(0, len(dataloader.dataset) - 1)
-    sample: S2OSMSample = dataloader.dataset[idx]
-    inp = sample.x.unsqueeze(0).to(model.device)  # (1,c,t,h,w)
-    with torch.inference_mode():
-        pred = model(inp).squeeze().argmax(dim=0).cpu().numpy()  # (1,n_cls,h,w) -> (h,w)
-    orig_img, bbox = load_sentinel_tiff_for_plotting(dataloader.dataset.dataset.sentinel_files[idx], return_bbox=True)
-    # crop # fixme? when mode=train, it's a random crop not corresponding to the input
-    orig_img = dataloader.dataset.dataset.transform[0](image=orig_img)["image"]
-    labels = sample.y.cpu().numpy()
-    # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
-    masks = {
-        "predictions": {"mask_data": pred, "class_labels": class_labels},
-        "labels": {"mask_data": labels, "class_labels": class_labels},
-    }
-    caption = f"{bbox} | Epoch: {epoch} | Sample ID: {idx}"
-    wandb.log({f"{plot_name}": wandb.Image(orig_img, masks=masks, caption=caption)})
+        orig_img, bbox = load_sentinel_tiff_for_plotting(dataset.sentinel_files[idx], return_bbox=True)
+        orig_img = dataset.transform[0](image=orig_img)["image"]  # crop only, no normalization
+
+        labels = sample.y.cpu().numpy()
+
+        # Customize colors once https://github.com/wandb/wandb/issues/6637 is resolved.
+        masks = {
+            "predictions": {"mask_data": pred, "class_labels": class_labels},
+            "labels": {"mask_data": labels, "class_labels": class_labels},
+        }
+        caption = f"{bbox} | Epoch: {self.current_epoch} | Sample ID: {idx}"
+        wandb.log({f"{plot_name}": wandb.Image(orig_img, masks=masks, caption=caption)})
 
 
 def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
@@ -259,7 +257,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
     ]
     callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="step")] if config.train.use_wandb_logger else []
     logger: WandbLogger | bool = (
-        WandbLogger(  # todo use wandb key from env for team entity
+        WandbLogger(
             entity=config.train.wandb_entity,
             project=config.train.project_name,
             name=config.train.run_name,
@@ -271,7 +269,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         else False
     )
     if logger:
-        logger.watch(model, log="all", log_freq=10)  # todo set lower after debugging
+        logger.watch(model, log="all", log_freq=30)
     trainer: pl.Trainer = pl.Trainer(
         default_root_dir=ROOT_DIR,
         max_epochs=config.train.max_epochs,
@@ -309,8 +307,6 @@ def main() -> None:
     parser.add_argument("--no-compile", action="store_true", help="Compile model. Default: True")
     args = parser.parse_args()
 
-    dotenv.load_dotenv()
-
     config: Config = cfg.BASE_CONFIG(model_name=args.model)
     config = cfg.set_run_type(config, args.type)
     config.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
@@ -324,6 +320,7 @@ def main() -> None:
     config.train.use_wandb_logger = False if args.wandb else config.train.use_wandb_logger
     config.train.tags.extend(args.tags)
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
+    dotenv.load_dotenv()
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
 
     script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
