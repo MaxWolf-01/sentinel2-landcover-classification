@@ -76,7 +76,6 @@ MULTICLASS_MAP: LabelMap = {
         },
     },
     "agriculture": {
-        "idx": 3,
         "color": "#f5a142",
         "osm_tags": {
             "landuse": [
