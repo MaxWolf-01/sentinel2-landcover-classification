@@ -18,6 +18,10 @@ MULTICLASS_MAP: LabelMap = {
     "nature": {
         "color": "#00ff00",
         "osm_tags": {
+            "boundary": [
+                "national_park",
+                "protected_area",
+            ],
             "landuse": [
                 "forest",
                 "forestry",
@@ -29,13 +33,24 @@ MULTICLASS_MAP: LabelMap = {
                 "recreation_ground",
                 "village_green",
             ],
-            "natural": True,
             "leisure": [
                 "dog_park",
                 "garden",
                 "nature_reserve",
                 "park",
                 "protected_area",
+            ],
+            "natural": True,
+            "region": [
+                "mountain_range",
+                "natural_area",
+            ],
+            "surface": [
+                "earth",
+                "grass",
+                "mud",
+                "rock",
+                "sand",
             ],
             "waterway": [
                 "brook",
@@ -47,27 +62,12 @@ MULTICLASS_MAP: LabelMap = {
                 "stream",
                 "waterfall",
             ],
-            "boundary": [
-                "national_park",
-                "protected_area",
-            ],
             "wetland": [
                 "bog",
                 "fen",
                 "marsh",
                 "reedbed",
                 "swamp",
-            ],
-            "surface": [
-                "earth",
-                "grass",
-                "mud",
-                "rock",
-                "sand",
-            ],
-            "region": [
-                "mountain_range",
-                "natural_area",
             ],
         },
     },
@@ -79,9 +79,16 @@ MULTICLASS_MAP: LabelMap = {
                 "parking",
                 "parking_space",
             ],
+            "barrier": [
+                "city_wall",
+                "fence",
+                "guard_rail",
+                "kerb",
+                "retaining_wall",
+                "wall",
+            ],
             "building": True,
             "highway": True,
-            "railway": True,
             "landuse": [
                 "airport",
                 "brownfield",
@@ -99,14 +106,11 @@ MULTICLASS_MAP: LabelMap = {
                 "residential",
                 "retail",
             ],
-            "surface": [
-                "asphalt",
-                "cobblestone",
-                "concrete",
-                "metal",
-                "paving_stones",
-                "sett",
-                "unhewn_cobblestone",
+            "leisure": [
+                "pitch",
+                "sports_centre",
+                "swimming_pool",
+                "track",
             ],
             "man_made": [
                 "bridge",
@@ -116,8 +120,22 @@ MULTICLASS_MAP: LabelMap = {
                 "wastewater_plant",
                 "water_works",
             ],
+            "power": [
+                "substation",
+                "transformer",
+            ],
             "public_transport": [
                 "platform",
+            ],
+            "railway": True,
+            "surface": [
+                "asphalt",
+                "cobblestone",
+                "concrete",
+                "metal",
+                "paving_stones",
+                "sett",
+                "unhewn_cobblestone",
             ],
             "tourism": [
                 "aquarium",
@@ -129,29 +147,12 @@ MULTICLASS_MAP: LabelMap = {
                 "dock",
                 "lock_gate",
             ],
-            "power": [
-                "substation",
-                "transformer",
-            ],
-            "barrier": [
-                "city_wall",
-                "fence",
-                "guard_rail",
-                "kerb",
-                "retaining_wall",
-                "wall",
-            ],
-            "leisure": [
-                "pitch",
-                "sports_centre",
-                "swimming_pool",
-                "track",
-            ],
         },
     },
     "agriculture": {
         "color": "#f5a142",
         "osm_tags": {
+            "crop": True,
             "landuse": [
                 "agricultural",
                 "agriculture",
@@ -184,7 +185,6 @@ MULTICLASS_MAP: LabelMap = {
                 "vegetables",
                 "vine",
             ],
-            "crop": True,
         },
     },
 }
