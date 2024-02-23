@@ -3,21 +3,24 @@ Multiple sentinel images are fetched over some time-span, with one corresponding
 How many images are downloaded is determined by the frequency argument. E.g. "W" means, that for the given time-interval
 of one week, a request for one image within that week is sent. For maxcc=0 (cloud-free), it makes sense to use a
 higher frequency, as the chance of getting a cloud-free image is higher (and we are wasting less requests).
+MS/2MS/QS seem to be the most useful frequencies (monthly, every two months, quarterly).
 The sentinel images are saved as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}_{time: int}.tif`
 The corresponding osm masks as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}.tif`
 
 TODO s:
-    - implement overwrite flags (dont download if file exists unless corresponding overwrite flag is set)
-    - implement a way to resume from a certain index?
+    - Implement a label-threshold-check for "other" class -> if "other" is concentrated in a few bad segments, we can
+    simply skip those.
 """
 import argparse
 import concurrent
 import json
 import math
 import os
+import shutil
 import time
 import traceback
 import typing
+import warnings
 from pathlib import Path
 
 import einops
@@ -106,16 +109,14 @@ def main() -> None:
     parser.add_argument(
         "--frequency",
         type=str,
-        default="MS",
-        help="Pandas time frequency string. Determines how many images to fetch for a given segment. Default: monthly.",
+        default="QS",
+        help="Pandas time frequency string. Determines how many images to fetch for a given segment. Default: QS.",
     )
-    parser.add_argument(
-        "--overwrite-sentinel", type=bool, default=False, help="Overwrite existing sentinel data."
-    )  # TODO implement
-    parser.add_argument(
-        "--overwrite-osm", type=bool, default=False, help="Overwrite existing OSM data."
-    )  # TODO implement
+    parser.add_argument("--overwrite-sentinel", action="store_true", help="re-download existing sentinel data.")
+    parser.add_argument("--overwrite-osm", action="store_true", help="re-download existing OSM data.")
+    parser.add_argument("--resume", action="store_true", help="Skip already downloaded segments. Don't overwrite.")
     args = parser.parse_args()
+    assert args.overwrite_sentinel or args.overwrite_osm, "You need to set at least one overwrite flag to True."
     label_map = MAPS[args.labels]
 
     ox.settings.use_cache = True
@@ -125,11 +126,38 @@ def main() -> None:
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
 
     data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
+    if args.overwrite_sentinel and data_dirs.sentinel.exists() and not args.resume:
+        warnings.warn(f"Deleting existing sentinel data: {data_dirs.sentinel}")
+        input("Press Enter to continue...")
+        shutil.rmtree(data_dirs.sentinel)
+    if args.overwrite_osm and data_dirs.osm.exists() and not args.resume:
+        warnings.warn(f"Deleting existing osm data: {data_dirs.osm}")
+        input("Press Enter to continue...")
+        shutil.rmtree(data_dirs.osm, ignore_errors=True)
     data_dirs.osm.mkdir(parents=True, exist_ok=True)
     data_dirs.sentinel.mkdir(parents=True, exist_ok=True)
 
     segments: list[BBox] = calculate_segments(bbox=AOIs[args.aoi], segment_size_km=SEGMENT_LENGTH_KM)
     print(f"Number of segments: {len(segments)}")
+
+    skip_indices: list[int] = []
+    resume_indicies_file = data_dirs.base_path / "resume.json"
+    resume_metadata_file = data_dirs.base_path / "metadata.tmp.json"
+    if args.resume and resume_indicies_file.exists():
+        with resume_indicies_file.open("r") as f:
+            skip_indices = json.load(f).get("skip_indices", [])
+        with resume_metadata_file.open("r") as f:
+            resume_metadata: dict = json.load(f)
+        current_metadata = get_metadata_dict(args, segments)
+        assert resume_metadata == current_metadata, (
+            f"Metadata mismatch. Please check your settings.\n"
+            f"Tried to resume script with: {current_metadata}\nPrevious script was run with: {resume_metadata}"
+        )
+        print(
+            f"Skipping {len(skip_indices)} already downloaded segments. Remaining: {len(segments) - len(skip_indices)}"
+        )
+    with resume_metadata_file.open("w") as f:
+        json.dump(get_metadata_dict(args, segments), f, indent=4)
 
     executor = (
         concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
@@ -138,20 +166,28 @@ def main() -> None:
     )
     with executor as pool:
         future_to_segment = {
-            pool.submit(_process_segment, segment, idx, label_map, config, data_dirs, args.frequency): (idx, segment)
+            pool.submit(
+                _process_segment,
+                segment,
+                idx,
+                label_map,
+                config,
+                data_dirs,
+                args.frequency,
+                args.overwrite_sentinel,
+                args.overwrite_osm,
+            ): (idx, segment)
             for idx, segment in enumerate(segments)
+            if idx not in skip_indices
         }
         for future in tqdm(concurrent.futures.as_completed(future_to_segment), total=len(future_to_segment)):
             idx, segment = future_to_segment[future]
             try:
                 future.result()
+                skip_indices.append(idx)
+                with resume_indicies_file.open("w") as f:
+                    json.dump({"skip_indices": skip_indices}, f, indent=4)
             except Exception as e:
-                # cleanup, so we don't have imbalance between sentinel and osm data
-                sentinel_file = data_dirs.sentinel / f"{idx}.tif"
-                sentinel_file.unlink(missing_ok=True)
-                osm_file = data_dirs.osm / f"{idx}.tif"
-                osm_file.unlink(missing_ok=True)
-
                 print(f"Segment {segment} idx:{idx} generated an exception:\n{traceback.format_exc()}")
                 if "terminated abruptly" in str(e):
                     print(
@@ -160,40 +196,55 @@ def main() -> None:
                         "Or don't use the --parallel flag to use threads instead of processes."
                     )
     print(f"Collected {len(list(data_dirs.sentinel.glob('*.tif')))} sentinel images for {len(segments)} osm masks.")
-    # write settings to file for reproducibility/info
-    metadata = {
+    with (data_dirs.base_path / "metadata.json").open("w") as f:  # write settings to file for reproducibility/info
+        json.dump(get_metadata_dict(args, segments), f, indent=4)
+    resume_indicies_file.unlink(missing_ok=True)
+    resume_metadata_file.unlink(missing_ok=True)
+
+
+def get_metadata_dict(args: argparse.Namespace, segments: list[BBox]) -> dict:
+    return {
         "aoi": args.aoi,
         "mapping": args.labels,
-        "interval": TIME_INTERVAL,
+        "interval": list(TIME_INTERVAL),
         "frequency": args.frequency,
         "bands": BANDS,
-        "resolution": SEGMENT_SIZE,
+        "resolution": list(SEGMENT_SIZE),
         "segment_size_km": SEGMENT_LENGTH_KM,
         "crs": CRS.value,
         "collection": DATA_COLLECTION.name,
         "num_segments": len(segments),
     }
-    with (data_dirs.base_path / "metadata.json").open("w") as f:
-        json.dump(metadata, f, indent=4)
 
 
 def _process_segment(
-    segment: BBox, idx: int, label_map: LabelMap, sh_config: sh.SHConfig, data_dirs: S2OSMDataDirs, frequency: str
+    segment: BBox,
+    idx: int,
+    label_map: LabelMap,
+    sh_config: sh.SHConfig,
+    data_dirs: S2OSMDataDirs,
+    frequency: str,
+    get_sentinel: bool,
+    get_osm: bool,
 ) -> None:
     time_intervals: list[tuple[str, str]] = _split_up_time_interval(TIME_INTERVAL, frequency=frequency)
+    assert len(time_intervals) > 0, "No time intervals found. Check your time interval and frequency settings."
+
+    if get_osm:
+        osm_data: gpd.GeoDataFrame = _fetch_osm_data(segment, tag_mapping=label_map)
+        _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)  # other=0
+
+    if not get_sentinel:
+        return
+
     sentinel_data: list[npt.NDArray] = []
     for time_interval in time_intervals:
-        # print(f"Fetching sentinel data for segment {segment} idx:{idx} for time interval {time_interval}")
         data = fetch_sentinel_data(segment=segment, sh_config=sh_config, time_interval=time_interval)
         if data.sum() == 0:
-            # print(f"Segment {segment}, idx:{idx} has no valid data for time interval {time_interval}")
             continue
         sentinel_data.append(data)
         time.sleep(2)  # to avoid rate limiting
     save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dirs.sentinel)
-    # print(f"Fetching OSM data for segment {segment}, idx:{idx}")
-    osm_data: gpd.GeoDataFrame = _fetch_osm_data(segment, tag_mapping=label_map)
-    _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)  # other=0
 
 
 def _split_up_time_interval(time_interval: tuple[str, str], frequency: str) -> list[tuple[str, str]]:
@@ -248,7 +299,7 @@ def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig, time_interval: tu
             sh.SentinelHubRequest.input_data(
                 data_collection=DATA_COLLECTION,
                 time_interval=time_interval,
-                maxcc=0,
+                maxcc=0.05,
                 mosaicking_order=sh.MosaickingOrder.LEAST_CC,
                 upsampling=sh.ResamplingType.BICUBIC,
             )
@@ -345,7 +396,7 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, i
         f.write_band(1, burned)
 
 
-def _visualize_segment_bbox() -> None:  # kinda useless and can be deleted
+def _visualize_segment_bbox() -> None:
     import shapely
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
