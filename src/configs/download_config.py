@@ -30,7 +30,7 @@ class DataDirs:
 
 
 CRS: sh.CRS = sh.CRS.WGS84  # Coordinate Reference System
-DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # Sentinel-2 Level 2A data collection
+DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # Sentinel-2 Level 2A data collection
 RESOLUTION: tuple[int, int] = (512, 512)  # Resolution in pixels (width, height)
 SEGMENT_SIZE: int = 25  # Segment size in kilometers for data processing
 
@@ -39,10 +39,11 @@ DATA_DIR = ROOT_DIR / "data"
 
 # Area of Interests (AOIs)
 AOIs: Dict[str, BBox] = {
-    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),
     "fr": BBox(west=4.508514, south=45.477466, east=5.284424, north=45.897655),  # Lyon in france
-    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
+    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # rough crop
+    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # VIE,NÖ,OÖ,NBGLD,Graz
+    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # AT + bits of neighbours
+    "small": BBox(north=48.286391, south=48.195845, east=16.463699, west=16.311951),  # small area in VIE; 6 segments
 }
 
 TIME_INTERVAL: tuple[str, str] = (

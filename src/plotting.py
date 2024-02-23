@@ -35,18 +35,6 @@ def plot_sentinel_mask_and_pred(
     )
 
 
-def plot_cnes_land_cover(mask: Path, label_map: dict) -> None:
-    """Plots CNES Land Cover data."""
-    mask_img = load_mask_tiff_for_plotting(mask)  # Assuming this function exists or is adapted for CNES data
-    cmap = get_cnes_color_map()
-
-    plt.figure(figsize=(10, 10))
-    plt.imshow(mask_img, cmap=cmap)
-    plt.colorbar()  # TODO: Add a color bar
-    plt.title("CNES Land Cover Map")
-    plt.show()
-
-
 def plot_images(
     images: list[npt.NDArray],
     titles: list[str],

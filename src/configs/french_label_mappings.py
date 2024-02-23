@@ -76,13 +76,3 @@ def map_labels_to_simplified_categories(labels: np.ndarray) -> np.ndarray:
     mapped_labels = np.vectorize(map_func)(labels)
     return mapped_labels.astype(int)
 
-
-# Example usage
-if __name__ == "__main__":
-    # Generate color map for visualization
-    cnes_color_map = get_cnes_color_map()
-
-    # Print label info for reference
-    label_info = get_label_info()
-    for info in label_info:
-        print(f"ID: {info['id']}, Label: {info['label']}, Color: {info['color']}")
