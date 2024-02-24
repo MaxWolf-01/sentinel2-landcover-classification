@@ -6,10 +6,6 @@ higher frequency, as the chance of getting a cloud-free image is higher (and we 
 MS/2MS/QS seem to be the most useful frequencies (monthly, every two months, quarterly).
 The sentinel images are saved as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}_{time: int}.tif`
 The corresponding osm masks as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}.tif`
-
-TODO s:
-    - Implement a label-threshold-check for "other" class -> if "other" is concentrated in a few bad segments, we can
-    simply skip those.
 """
 import argparse
 import concurrent
@@ -18,7 +14,6 @@ import math
 import os
 import shutil
 import time
-import traceback
 import typing
 import warnings
 from pathlib import Path
@@ -91,6 +86,7 @@ LABEL_MAPPINGS: dict[str, LabelMap] = {
     "multi": MULTICLASS_MAP,
     "binary": BINARY_MAP,
 }
+MAX_UNLABELED: float = 0.3  # Maximum percentage of unlabeled pixels in a segment
 
 
 class S2OSMDataDirs:
@@ -99,13 +95,14 @@ class S2OSMDataDirs:
         self.sentinel: Path = self.base_path / "sentinel"
         self.osm: Path = self.base_path / "osm"
 
-    def sentinel_files(self, sort: bool) -> list[Path]:
-        files = list(self.sentinel.glob("*.tif"))
-        return sorted(files, key=lambda path: tuple(map(int, path.stem.split("_")))) if sort else files
+    @property
+    def sentinel_files(self) -> dict[int, Path]:
+        files = sorted(list(self.sentinel.glob("*.tif")), key=lambda path: tuple(map(int, path.stem.split("_"))))
+        return {i: path for i, path in enumerate(files)}
 
-    def osm_files(self, sort: bool) -> list[Path]:
-        files = list(self.osm.glob("*.tif"))
-        return sorted(files, key=lambda path: int(path.stem)) if sort else files
+    @property
+    def osm_files(self) -> dict[int, Path]:
+        return {int(path.stem): path for path in sorted(list(self.osm.glob("*.tif")), key=lambda path: int(path.stem))}
 
 
 def main() -> None:
@@ -196,13 +193,14 @@ def main() -> None:
                 with resume_indicies_file.open("w") as f:
                     json.dump({"skip_indices": skip_indices}, f, indent=4)
             except Exception as e:
-                print(f"Segment {segment} idx:{idx} generated an exception:\n{traceback.format_exc()}")
+                print(f"Segment {segment} idx:{idx} generated an exception.")
                 if "terminated abruptly" in str(e):
                     print(
                         "You might have run out of RAM. "
                         "Try lowering the number of workers via the --workers argument."
                         "Or don't use the --parallel flag to use threads instead of processes."
                     )
+                raise e
     print(f"Collected {len(list(data_dirs.sentinel.glob('*.tif')))} sentinel images for {len(segments)} osm masks.")
     with (data_dirs.base_path / "metadata.json").open("w") as f:  # write settings to file for reproducibility/info
         json.dump(get_metadata_dict(args, segments), f, indent=4)
@@ -240,7 +238,9 @@ def _process_segment(
 
     if get_osm:
         osm_data: gpd.GeoDataFrame = _fetch_osm_data(segment, tag_mapping=label_map)
-        _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)  # other=0
+        valid_mask = _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)
+        if not valid_mask:
+            return
 
     if not get_sentinel:
         return
@@ -248,7 +248,7 @@ def _process_segment(
     sentinel_data: list[npt.NDArray] = []
     for time_interval in time_intervals:
         data = fetch_sentinel_data(segment=segment, sh_config=sh_config, time_interval=time_interval)
-        if data.sum() == 0:
+        if (data == 0).sum() > 0.5 * data.size:  # if more than 50% is 0, it is usually cut off
             continue
         sentinel_data.append(data)
         time.sleep(2)  # to avoid rate limiting
@@ -384,12 +384,17 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
-def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int) -> None:
+def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int) -> bool:
     pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, SEGMENT_SIZE)
     transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
 
     shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
     burned = rasterize(shapes=shapes, out_shape=SEGMENT_SIZE, transform=transform, fill=other_cls_label, dtype="uint8")
+
+    if (zero_sum := (burned == 0).sum()) > MAX_UNLABELED * burned.size:
+        print(f"Segment {idx} has too many unlabeled pixels: {(zero_sum / burned.size):.2f}")
+        return False
+
     with rasterio.open(
         fp=osm_dir / f"{idx}.tif",
         mode="w",
@@ -402,6 +407,7 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, i
         transform=transform,
     ) as f:
         f.write_band(1, burned)
+    return True
 
 
 def _visualize_segment_bbox() -> None:

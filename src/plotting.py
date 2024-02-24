@@ -125,22 +125,36 @@ if __name__ == "__main__":
     parser.add_argument("--labels", type=str, default="multiclass", help=f"Default: Multiclass. Available:{list(MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="n is the index of the mask file instead of the sentinel file."
+        "Uses the first sentinel file found for the mask file.",
+    )
     args = parser.parse_args()
     data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
-    sentinel_files: list[Path] = data_dirs.sentinel_files(sort=True)
-    mask_files: list[Path] = data_dirs.osm_files(sort=True)
-    get_mask_file = lambda i: mask_files[get_mask_file_idx(sentinel_files[i])]  # noqa: E731
+    sentinel_files: dict[int, Path] = data_dirs.sentinel_files
+    mask_files: dict[int, Path] = data_dirs.osm_files
+    get_sentinel_file_from_mask = (  # noqa: E731
+        lambda osm_i: next(f for f in sentinel_files.values() if get_mask_file_idx(f) == int(mask_files[osm_i].stem))
+    )
 
     index = args.n
     max_index = len(sentinel_files)
     print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\nq: quit")
     while True:
         index = max(0, min(index, max_index - 1))
-        plot_sentinel_and_mask(
-            sentinel=sentinel_files[index], mask=get_mask_file(index), label_map=MAPS[args.labels], p=args.p
-        )
+        if not args.reverse:
+            sentinel_file = sentinel_files[index]
+            osm_file = mask_files[get_mask_file_idx(sentinel_file)]
+        else:
+            sentinel_file = get_sentinel_file_from_mask(index)
+            osm_file = mask_files[get_mask_file_idx(sentinel_file)]
+            assert int(osm_file.stem) == index, f"{osm_file.stem} != {index}"
+        assert sentinel_file.stem.split("_")[0] == osm_file.stem, f"{sentinel_file.stem} != {osm_file.stem}"
+        print("Showing:", "/".join(sentinel_file.parts[-4:]), "/".join(osm_file.parts[-4:]))
+        plot_sentinel_and_mask(sentinel=sentinel_file, mask=osm_file, label_map=MAPS[args.labels], p=args.p)
         plt.show(block=False)
-        print("Showing:", sentinel_files[index].name, get_mask_file(index).name)
         user_input = input("Input:")
         if user_input in "nN":
             index += 1
