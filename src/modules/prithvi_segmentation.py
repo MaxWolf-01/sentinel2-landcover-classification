@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import einops
 import torch
 from torch import nn
@@ -80,10 +82,10 @@ class FCNHead(nn.Module):
         self,
         num_classes: int,
         in_channels: int,
-        out_channels: int = 256,
-        num_convs: int = 1,
+        out_channels: int,
+        num_convs: int,
+        dropout: float,
         kernel_size: int = 3,
-        dropout_ratio: float = 0.1,
     ) -> None:
         super().__init__()
         self.net = nn.Sequential(
@@ -101,7 +103,7 @@ class FCNHead(nn.Module):
                     nn.ReLU(inplace=True),
                 ]
             ],
-            nn.Dropout2d(dropout_ratio),
+            nn.Dropout2d(dropout),
             nn.Conv2d(out_channels, num_classes, kernel_size=1),
         )
 
@@ -109,28 +111,53 @@ class FCNHead(nn.Module):
         return self.net(x)
 
 
-class PrithviSegmentationModel(nn.Module):
-    def __init__(
-        self,
-        neck: nn.Module,
-        head: nn.Module,
-        num_frames: int = 1,
-    ) -> None:
-        super().__init__()
-        # TODO we don't need to load the entire thing if we only want the encoder!!
-        self.backbone: MaskedAutoencoderViT = load_prithvi(num_frames=num_frames)
-        self.neck: nn.Module = neck
-        self.head: nn.Module = head
+@dataclass
+class PrithviSegmentationNetConfig:
+    num_frames: int  # input frames per prediction
+    num_classes: int
+    fcn_out_channels: int
+    fcn_num_convs: int
+    fcn_dropout: float
+    frozen_backbone: bool
 
+    embed_dim: int = 768  # fixed prithvi output embedding dim
+    output_embed_dim: int = -1  # to be set in __post_init__
+    patch_height: int = 14
+    patch_width: int = 14
+
+    def __post_init__(self) -> None:
+        self.output_embed_dim = self.embed_dim * self.num_frames
+
+
+class PrithviSegmentationNet(nn.Module):
+    def __init__(self, config: PrithviSegmentationNetConfig) -> None:
+        super().__init__()
+        self.backbone: MaskedAutoencoderViT = load_prithvi(num_frames=config.num_frames)
+        self.neck: nn.Module = ConvTransformerTokensToEmbeddingNeck(
+            embed_dim=config.embed_dim * config.num_frames,
+            output_embed_dim=config.output_embed_dim,
+            patch_height=config.patch_height,
+            patch_width=config.patch_width,
+        )
+        self.head: nn.Module = FCNHead(
+            num_classes=config.num_classes,
+            in_channels=config.output_embed_dim,
+            out_channels=config.fcn_out_channels,
+            num_convs=config.fcn_num_convs,
+            dropout=config.fcn_dropout,
+        )
         self.head.apply(initialize_head_or_neck_weights)
         self.neck.apply(initialize_head_or_neck_weights)
 
+        if config.frozen_backbone:
+            self.backbone.requires_grad_(False)
+            self.backbone.eval()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Input shape: (B, T, C, H, W); Output shape: (B, num_classes, H, W)"""
-        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)  # no mae mask | features: (B, tokens, emb_d)
-
+        # no mae mask | features: (B, tokens, emb_d)
+        features, _, _ = self.backbone.forward_encoder(x, mask_ratio=0.0)
         neck_output = self.neck(features)
-
         output = self.head(neck_output)
         return output
 
@@ -152,13 +179,23 @@ def initialize_head_or_neck_weights(m: nn.Module) -> None:
 if __name__ == "__main__":
 
     def t() -> None:
-        m = PrithviSegmentationModel(
-            neck=ConvTransformerTokensToEmbeddingNeck(embed_dim=768, output_embed_dim=256),
-            head=FCNHead(num_classes=10, in_channels=256, out_channels=256),
+        m = PrithviSegmentationNet(
+            PrithviSegmentationNetConfig(
+                num_frames=1,
+                output_embed_dim=256,
+                fcn_out_channels=256,
+                fcn_num_convs=1,
+                fcn_dropout=0.1,
+                frozen_backbone=True,
+                num_classes=2,
+            )
         )
         B, T, C, H, W = 2, 1, 6, 224, 224
         x = torch.randn(B, C, T, H, W)
         y = m(x)
         print(y.shape)
+        m = load_prithvi(1, no_decoder=False)
+        loss, pred, mask = m.forward(x)
+        print(loss.shape, pred.shape, mask.shape)
 
     t()
