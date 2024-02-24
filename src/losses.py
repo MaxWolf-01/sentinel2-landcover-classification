@@ -71,10 +71,10 @@ class CombinedLoss:
     l2: Loss
 
     def __call__(self, y: torch.Tensor, y_hat: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        """Returns the weighted sum of the two losses and the individual losses for logging purposes."""
+        """Returns the weighted sum of the two losses and the individual losses, for logging purposes."""
         part1 = self.l1_weight * self.l1(y, y_hat)
         part2 = self.l2_weight * self.l2(y, y_hat)
-        return (self.l1_weight * self.l1(y, y_hat) + self.l2_weight * self.l2(y, y_hat)), (part1, part2)
+        return (part1 + part2), (part1, part2)
 
 
 def _reduce(loss: torch.Tensor, reduction: ReduceType = "mean") -> torch.Tensor:
