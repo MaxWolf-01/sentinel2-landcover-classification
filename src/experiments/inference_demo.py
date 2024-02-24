@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from configs.label_mappings import MULTICLASS_MAP
 from configs.paths import OUT_DIR, ROOT_DIR
 from data.s2osm_datamodule import S2OSMDatamodule
-from src.train_segmentation import PrithviSegmentationFineTuner
+from src.train_segmentation import SegmentationModule
 import lightning.pytorch as pl
 
 
@@ -30,7 +30,7 @@ class CustomWriter(pl.callbacks.BasePredictionWriter):
 
 
 ckpt_path = "/home/max/repos/code/sentinel2-landcover-classification/ckpts/simple-prithvi-finetune/last-v10.ckpt"
-model = PrithviSegmentationFineTuner.load_from_checkpoint(ckpt_path)
+model = SegmentationModule.load_from_checkpoint(ckpt_path)
 
 dm = S2OSMDatamodule(cfg=model.config.datamodule)
 dm.setup()
@@ -44,8 +44,8 @@ if __name__ == '__main__':
     from src.plotting import plot_sentinel_mask_and_pred, load_pred_batch_for_plotting
 
     batch = load_pred_batch_for_plotting(OUT_DIR / "batch_0.pt")
-    sentinel_paths = dm.val.sentinel_files
-    mask_paths = dm.val.osm_files
+    sentinel_paths = dm.val.dataset.sentinel_files
+    mask_paths = dm.val.dataset.osm_files
     for (sentinel, mask, pred_img) in zip(sentinel_paths, mask_paths, batch):
         plot_sentinel_mask_and_pred(sentinel=sentinel, mask=mask, pred_img=pred_img, label_map=MULTICLASS_MAP)
         plt.show()

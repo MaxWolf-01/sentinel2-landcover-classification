@@ -3,9 +3,9 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
+import albumentations as A
 import lightning.pytorch as pl
 import torch
-import albumentations as A
 
 from data.mae_dataset import MAEDataset, MAEDatasetConfig
 from src.utils import Subset, get_logger, load_prithvi_mean_std, train_val_test_split
@@ -58,19 +58,19 @@ class MAEDatamodule(pl.LightningDataModule):
         self.train, self.test, self.val = train_val_test_split(dataset, self.cfg.data_split, deepcopy=True)
 
         mean, std = load_prithvi_mean_std()  # todo use mean and std from fine-tuning dataset?
-        random_transforms_and_augments = [
+        augmentation_transforms = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
             # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
-            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         # necessary transforms
         deterministic_base_transforms = [
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            # A.Normalize(mean=mean, std=std),  # Normalize comes last!
+            A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
-        train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
+        train_transforms = A.Compose(augmentation_transforms if self.augment else deterministic_base_transforms)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
 
         # Avoid data-leakage through augmentation -> aplpy transforms to train, val and test separately

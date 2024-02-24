@@ -3,9 +3,9 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
+import albumentations as A
 import lightning.pytorch as pl
 import torch
-import albumentations as A
 
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
 from src.utils import Subset, get_logger, train_val_test_split
@@ -67,7 +67,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
         mean = stats["mean"]
         std = stats["std"]
 
-        random_transforms_and_augments = [
+        augmentation_transforms = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             # todo add transforms after evaluation pipeline is set up
             # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
@@ -79,7 +79,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
             A.CenterCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
             A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
-        train_transforms = A.Compose(deterministic_base_transforms if self.augment else random_transforms_and_augments)
+        train_transforms = A.Compose(augmentation_transforms if self.augment else deterministic_base_transforms)
         val_test_transforms: A.Compose = A.Compose(deterministic_base_transforms)
 
         # Avoid data-leakage through augmentation -> aplpy transforms to train, val and test separately
