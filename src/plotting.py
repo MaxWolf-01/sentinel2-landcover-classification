@@ -1,18 +1,18 @@
+import argparse
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 import rasterio
 import torch
 from einops import einops
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
-
-from data.download_data import BBox, AOIs, S2OSMDataDirs
-from src.configs.label_mappings import LabelMap, MAPS
-import numpy.typing as npt
 from matplotlib.patches import Patch
 
-import argparse
+from data.download_data import AOIs, BBox, S2OSMDataDirs
+from data.s2osm_dataset import get_mask_file_idx
+from src.configs.label_mappings import LabelMap, MAPS
 
 
 def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
@@ -121,14 +121,15 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="vie", help=f"Default: VIE. Available: {list(AOIs)}")
-    parser.add_argument("--labels", type=str, default="binary", help=f"Default: Multiclass. Available:{list(MAPS)}")
+    parser.add_argument("--aoi", type=str, default="at", help=f"Default: VIE. Available: {list(AOIs)}")
+    parser.add_argument("--labels", type=str, default="multiclass", help=f"Default: Multiclass. Available:{list(MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
     data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
-    sentinel_files = sorted(list(data_dirs.sentinel.glob("*.tif")))
-    mask_files = sorted(list(data_dirs.osm.glob("*.tif")))
+    sentinel_files: list[Path] = data_dirs.sentinel_files(sort=True)
+    mask_files: list[Path] = data_dirs.osm_files(sort=True)
+    get_mask_file = lambda i: mask_files[get_mask_file_idx(sentinel_files[i])]  # noqa: E731
 
     index = args.n
     max_index = len(sentinel_files)
@@ -136,21 +137,19 @@ if __name__ == "__main__":
     while True:
         index = max(0, min(index, max_index - 1))
         plot_sentinel_and_mask(
-            sentinel=sentinel_files[index], mask=mask_files[index], label_map=MAPS[args.labels], p=args.p
+            sentinel=sentinel_files[index], mask=get_mask_file(index), label_map=MAPS[args.labels], p=args.p
         )
         plt.show(block=False)
+        print("Showing:", sentinel_files[index].name, get_mask_file(index).name)
         user_input = input("Input:")
-        match user_input:
-            case "q":
-                plt.close("all")
-                break
-            case "n":
-                index += 1
-            case "b":
-                index -= 1
-            case "N":
-                plt.close("all")
-                index += 1
-            case "B":
-                plt.close("all")
-                index -= 1
+        if user_input in "nN":
+            index += 1
+        elif user_input in "bB":
+            index -= 1
+        elif user_input == "q":
+            plt.close("all")
+            break
+        else:
+            continue
+        if user_input.isupper():
+            plt.close("all")

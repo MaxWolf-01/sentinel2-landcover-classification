@@ -7,13 +7,13 @@ import os
 import traceback
 from pathlib import Path
 
-import sentinelhub as sh
 import numpy.typing as npt
+import sentinelhub as sh
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from src.data.download_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
 from src.configs.paths import DATA_DIR
+from src.data.download_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
 
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
@@ -66,7 +66,7 @@ def main() -> None:
 
 
 def _process_segment(segment: BBox, idx: int, sh_config: sh.SHConfig, data_dir: Path) -> None:
-    sentinel_data: npt.NDArray = fetch_sentinel_data(segment=segment, sh_config=sh_config)
+    sentinel_data: list[npt.NDArray] = fetch_sentinel_data(segment=segment, sh_config=sh_config)  # TODO update
     save_sentinel_data_as_geotiff(sentinel_data, idx=idx, aoi=segment, sentinel_dir=data_dir)
 
 
