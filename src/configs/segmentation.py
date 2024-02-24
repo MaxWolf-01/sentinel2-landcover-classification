@@ -73,7 +73,7 @@ class TrainConfig:
     betas: tuple[float, float]
 
     # loss
-    loss_type: typing.Literal["ce", "focal"]
+    loss_type: typing.Literal["ce", "focal", "dice", "dice_focal"]
 
     # compile
     compile_mode: str
@@ -100,6 +100,9 @@ class TrainConfig:
     label_smoothing: float = 0.0
     focal_loss_alpha: float | None = None
     focal_loss_gamma: float | None = None
+    dice_eps: float | None = None
+    dice_focal_dice_weight: float | None = None
+    dice_focal_focal_weight: float | None = None
 
     # lr scheduler
     lr_scheduler_type: typing.Literal["step", "cosine_warm_restarts"] | None = None

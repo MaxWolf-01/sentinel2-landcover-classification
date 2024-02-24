@@ -2,10 +2,10 @@ import typing
 from dataclasses import dataclass
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from configs.segmentation import Config
-import torch.nn.functional as F
 
 Loss = typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
@@ -19,6 +19,19 @@ def get_loss(config: Config) -> Loss:
                 alpha=config.train.focal_loss_alpha,
                 gamma=config.train.focal_loss_gamma,
                 label_smoothing=config.train.label_smoothing,
+            )
+        case "dice":
+            return DiceLoss(eps=config.train.dice_eps)
+        case "dice_focal":
+            return CombinedLoss(
+                l1_weight=config.train.dice_focal_dice_weight,
+                l2_weight=config.train.dice_focal_focal_weight,
+                l1=DiceLoss(eps=config.train.dice_eps),
+                l2=FocalLoss(
+                    alpha=config.train.focal_loss_alpha,
+                    gamma=config.train.focal_loss_gamma,
+                    label_smoothing=config.train.label_smoothing,
+                ),
             )
         case _:
             raise ValueError(f"Unknown loss type: {config.train.loss_type}.")
@@ -71,12 +84,16 @@ class CombinedLoss:
     l2_weight: float
     l1: Loss
     l2: Loss
+    # store losses for logging
+    l1_value: float | None = None
+    l2_value: float | None = None
 
-    def __call__(self, y: torch.Tensor, y_hat: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        """Returns the weighted sum of the two losses and the individual losses, for logging purposes."""
+    def __call__(self, y: torch.Tensor, y_hat: torch.Tensor) -> torch.Tensor:
+        """Returns the weighted sum of two losses and updates the stored losses for logging."""
         part1 = self.l1_weight * self.l1(y, y_hat)
         part2 = self.l2_weight * self.l2(y, y_hat)
-        return (part1 + part2), (part1, part2)
+        self.l1_value, self.l2_value = part1.item(), part2.item()
+        return part1 + part2
 
 
 def _reduce(loss: torch.Tensor, reduction: ReduceType = "mean") -> torch.Tensor:
