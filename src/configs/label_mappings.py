@@ -8,12 +8,52 @@ class LabelEntry(typing.TypedDict):
     osm_tags: OSMTagMap
 
 
+# NOTE: The ordering of the top-level keys determines the priority of the classes (in case of label overlap)
+# The last label in the dictionary has the highest priority (as it overwrites the previous ones)
 LabelMap = dict[str, LabelEntry]
 
 MULTICLASS_MAP: LabelMap = {
     "other": {
         "color": "#000000",
         "osm_tags": {},
+    },
+    "agriculture": {
+        "color": "#f5a142",
+        "osm_tags": {
+            "crop": True,
+            "landuse": [
+                "agricultural",
+                "agriculture",
+                "allotments",
+                "animal_keeping",
+                "farmland",
+                "farmyard",
+                "flowerbed",
+                "orchard",
+                "paddy",
+                "salt_pond",
+                "vineyard",
+            ],
+            "produce": [
+                "cocoa",
+                "coffee",
+                "fiber",
+                "flowers",
+                "fruit",
+                "grain",
+                "herbs",
+                "hop",
+                "nuts",
+                "oil",
+                "rubber",
+                "spices",
+                "sugar",
+                "tea",
+                "tobacco",
+                "vegetables",
+                "vine",
+            ],
+        },
     },
     "nature": {
         "color": "#00ff00",
@@ -146,44 +186,6 @@ MULTICLASS_MAP: LabelMap = {
             "waterway": [
                 "dock",
                 "lock_gate",
-            ],
-        },
-    },
-    "agriculture": {
-        "color": "#f5a142",
-        "osm_tags": {
-            "crop": True,
-            "landuse": [
-                "agricultural",
-                "agriculture",
-                "allotments",
-                "animal_keeping",
-                "farmland",
-                "farmyard",
-                "flowerbed",
-                "orchard",
-                "paddy",
-                "salt_pond",
-                "vineyard",
-            ],
-            "produce": [
-                "cocoa",
-                "coffee",
-                "fiber",
-                "flowers",
-                "fruit",
-                "grain",
-                "herbs",
-                "hop",
-                "nuts",
-                "oil",
-                "rubber",
-                "spices",
-                "sugar",
-                "tea",
-                "tobacco",
-                "vegetables",
-                "vine",
             ],
         },
     },
