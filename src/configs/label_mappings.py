@@ -24,7 +24,6 @@ MULTICLASS_MAP: LabelMap = {
             "landuse": [
                 "agricultural",
                 "agriculture",
-                "allotments",
                 "animal_keeping",
                 "farmland",
                 "farmyard",
@@ -63,6 +62,7 @@ MULTICLASS_MAP: LabelMap = {
                 "protected_area",
             ],
             "landuse": [
+                "allotments",
                 "forest",
                 "forestry",
                 "grass",
@@ -148,7 +148,6 @@ MULTICLASS_MAP: LabelMap = {
             ],
             "leisure": [
                 "pitch",
-                "sports_centre",
                 "swimming_pool",
                 "track",
             ],
