@@ -99,6 +99,14 @@ class S2OSMDataDirs:
         self.sentinel: Path = self.base_path / "sentinel"
         self.osm: Path = self.base_path / "osm"
 
+    def sentinel_files(self, sort: bool) -> list[Path]:
+        files = list(self.sentinel.glob("*.tif"))
+        return sorted(files, key=lambda path: tuple(map(int, path.stem.split("_")))) if sort else files
+
+    def osm_files(self, sort: bool) -> list[Path]:
+        files = list(self.osm.glob("*.tif"))
+        return sorted(files, key=lambda path: int(path.stem)) if sort else files
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()

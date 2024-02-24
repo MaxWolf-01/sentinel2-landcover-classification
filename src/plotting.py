@@ -11,6 +11,7 @@ from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
 from data.download_data import AOIs, BBox, S2OSMDataDirs
+from data.s2osm_dataset import get_mask_file_idx
 from src.configs.label_mappings import LabelMap, MAPS
 
 
@@ -120,15 +121,15 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="vie", help=f"Default: VIE. Available: {list(AOIs)}")
+    parser.add_argument("--aoi", type=str, default="at", help=f"Default: VIE. Available: {list(AOIs)}")
     parser.add_argument("--labels", type=str, default="multiclass", help=f"Default: Multiclass. Available:{list(MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     args = parser.parse_args()
     data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
-    sentinel_files: list[Path] = sorted(list(data_dirs.sentinel.glob("*.tif")))
-    mask_files: list[Path] = sorted(list(data_dirs.osm.glob("*.tif")))
-    get_mask_file = lambda i: mask_files[int(sentinel_files[i].stem.split("_")[0])]  # noqa: E731
+    sentinel_files: list[Path] = data_dirs.sentinel_files(sort=True)
+    mask_files: list[Path] = data_dirs.osm_files(sort=True)
+    get_mask_file = lambda i: mask_files[get_mask_file_idx(sentinel_files[i])]  # noqa: E731
 
     index = args.n
     max_index = len(sentinel_files)
