@@ -6,19 +6,18 @@ import typing
 from pathlib import Path
 
 import einops
+import geopandas as gpd
 import numpy as np
+import numpy.typing as npt
 import osmnx as ox
 import pandas as pd
 import rasterio
+import sentinelhub as sh
+from dotenv import load_dotenv
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
-import sentinelhub as sh
-import geopandas as gpd
-import numpy.typing as npt
-from dotenv import load_dotenv
-from shapely import Point
 from tqdm import tqdm
-from shapely.ops import unary_union
+
 from src.configs.label_mappings import LabelMap, OSMTagMap, MULTICLASS_MAP, BINARY_MAP, MAPS
 from src.configs.paths import ROOT_DIR, DATA_DIR
 
@@ -38,9 +37,12 @@ class BBox(typing.NamedTuple):
 
 
 AOIs: dict[str, BBox] = {
-    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
-    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
-    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
+    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),
+    # ca. 20 tifs; rough crop
+    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),
+    # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
+    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),
+    # 456 tifs; AT + bits of neighbours
     "debug": BBox(north=48.140872, south=48.0404845, east=15.324359, west=15.2207735),
 }
 
@@ -245,67 +247,41 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
-def generate_points_in_polygon(polygon, density=100):
-    minx, miny, maxx, maxy = polygon.bounds
-    x_coords = np.linspace(minx, maxx, num=density)
-    y_coords = np.linspace(miny, maxy, num=density)
-    points = []
-    for x in x_coords:
-        for y in y_coords:
-            point = Point(x, y)
-            if polygon.contains(point):
-                points.append(point)
-    return points
-
-
-def polygon_to_points(polygon):
-    if polygon.geom_type == "Polygon":
-        union_polygon = unary_union([polygon])
-
-    elif polygon.geometry.geom_type == "MultiPolygon":
-        union_polygon = unary_union(polygon)
-
-    else:
-        raise ValueError("Input geometry must be a Polygon or MultiPolygon")
-
-    xmin, ymin, xmax, ymax = union_polygon.bounds
-
-    x_range = np.arange(xmin, xmax, 0.001)
-
-    y_range = np.arange(ymin, ymax, 0.001)
-
-    xx, yy = np.meshgrid(x_range, y_range)
-
-    points = gpd.GeoDataFrame(geometry=[Point(x, y) for x, y in zip(xx.flatten(), yy.flatten())])
-
-    points = points[points.within(union_polygon)]
-
-    return points
-
-
 def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi, osm_dir: Path, idx: int, other_cls_label: int) -> None:
-    pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, RESOLUTION)
+    """
+    Converts GeoDataFrame geometries into a rasterized TIFF file based on class labels.
+    Validates and rasterizes input geometries from a GeoDataFrame within a specified area of interest (AOI),
+    then saves the result as a TIFF file.
+
+    Parameters:
+    - gdf (gpd.GeoDataFrame): Geometries and 'class' labels for rasterization.
+    - aoi (object): Area of interest with 'north', 'south', 'east', 'west' bounds.
+    - osm_dir (Path): Directory path for the output TIFF file.
+    - idx (int): Index for generating the output file name.
+    - other_cls_label (int): Fill value for areas outside geometries.
+
+    Returns:
+    Outputs a TIFF file and does not return a value.
+
+    Notes:
+    Prints a message if no valid geometries are found or if invalid geometries cannot be repaired.
+    """
+    pixel_size_x, pixel_size_y = (aoi.east - aoi.west) / RESOLUTION[0], (aoi.north - aoi.south) / RESOLUTION[1]
     transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
-    gdf = gdf.explode("geometry")
-    shapes = []
-    for _, row in gdf.iterrows():
-        geom = row["geometry"]
-        if geom.is_valid and not geom.is_empty:
-            if geom.geom_type == "Polygon":
-                print("polygon detected, opinion rejected")
-                points = polygon_to_points(geom)
-                shapes.extend(((point, row["class"]) for point in points))
-            elif geom.geom_type == "MultiPolygon":
-                print("MultiPolygon detected, opinion rejected")
-                for poly in geom.geoms:
-                    points = polygon_to_points(poly)
-                    shapes.extend(((point, row["class"]) for point in points))
+
+    valid_geometries = []
+    for geom, value in zip(gdf.geometry, gdf["class"]):
+        if geom.is_valid:
+            valid_geometries.append((geom, value))
+        else:
+            fixed_geom = geom.buffer(0)
+            if fixed_geom.is_valid:
+                valid_geometries.append((fixed_geom, value))
             else:
-                shapes.append((geom, row["class"]))
-    shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
-    if shapes:
+                print(f"Invalid geometry cannot be fixed: {geom}")
+    if valid_geometries:
         burned = rasterize(
-            shapes=shapes,
+            shapes=valid_geometries,
             out_shape=RESOLUTION,
             transform=transform,
             fill=other_cls_label,
@@ -313,7 +289,7 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi, osm_dir: Path, idx: in
             all_touched=True,
         )
         with rasterio.open(
-            fp=osm_dir / f"{idx}.tif",
+            osm_dir / f"{idx}.tif",
             mode="w",
             driver="GTiff",
             height=RESOLUTION[0],
@@ -322,8 +298,10 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi, osm_dir: Path, idx: in
             dtype="uint8",
             crs=gdf.crs,
             transform=transform,
-        ) as f:
-            f.write_band(1, burned)
+        ) as dst:
+            dst.write_band(1, burned)
+    else:
+        print("No valid geometries to rasterize.")
 
 
 if __name__ == "__main__":
