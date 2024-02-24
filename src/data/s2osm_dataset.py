@@ -50,7 +50,6 @@ class S2OSMDataset(Dataset):
         osm_idx = get_mask_file_idx(self.sentinel_files[idx])
         with rasterio.open(self.osm_files[osm_idx]) as f:
             osm_data: npt.NDArray = f.read(1)  # read first band
-        print(self.sentinel_files[idx], self.osm_files[osm_idx])
 
         if self.transform is not None:
             sentinel_data = einops.rearrange(sentinel_data, "c h w -> h w c")  # albumentations uses chan last
