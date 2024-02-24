@@ -8,6 +8,8 @@ from functools import partial
 
 from torch import nn
 
+from losses import LossType
+from lr_schedulers import LRSchedulerType
 from modules.efficientnet_unet import EfficientNetConfig, EfficientnetUnet
 from modules.prithvi_segmentation import PrithviSegmentationNet, PrithviSegmentationNetConfig
 from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
@@ -73,7 +75,7 @@ class TrainConfig:
     betas: tuple[float, float]
 
     # loss
-    loss_type: typing.Literal["ce", "focal", "dice", "dice_focal"]
+    loss_type: LossType
 
     # compile
     compile_mode: str
@@ -105,7 +107,7 @@ class TrainConfig:
     dice_focal_focal_weight: float | None = None
 
     # lr scheduler
-    lr_scheduler_type: typing.Literal["step", "cosine_warm_restarts"] | None = None
+    lr_scheduler_type: LRSchedulerType | None = None
     step_lr_sched_step_size: int | None = None
     step_lr_sched_gamma: float | None = None
     cosine_warm_restarts_T_0: int | None = None
@@ -142,7 +144,7 @@ BASE_CONFIG = partial(
         overfit_batches=0.0,
         use_wandb_logger=True,
         # loss
-        loss_type="focal",
+        loss_type=LossType.FOCAL,
         focal_loss_alpha=0.25,
         focal_loss_gamma=2,
         # lr scheduler

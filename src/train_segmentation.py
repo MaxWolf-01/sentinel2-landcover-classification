@@ -26,8 +26,8 @@ from torchmetrics.classification import MulticlassConfusionMatrix
 import src.configs.segmentation as cfg
 from configs.label_mappings import LabelMap, MAPS
 from data.download_data import AOIs
-from losses import Loss, get_loss
-from lr_schedulers import get_lr_scheduler
+from losses import Loss, LossType, get_loss
+from lr_schedulers import LRSchedulerType, get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting
 from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from src.configs.segmentation import Config
@@ -294,6 +294,8 @@ def main() -> None:
     parser.add_argument("--model", type=str, required=True, help=f"Model type. One of: {list(cfg.ModelName)}")
     parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
+    parser.add_argument("--loss-type", type=str, default=None, help=f"Available: {list(LossType)}")
+    parser.add_argument("--lr-scheduler", type=str, default=None, help=f"Available: {list(LRSchedulerType)}")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs. -1 = infinite")
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")

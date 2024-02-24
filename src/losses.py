@@ -1,3 +1,4 @@
+import enum
 import typing
 from dataclasses import dataclass
 
@@ -5,24 +6,29 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from configs.segmentation import Config
-
 Loss = typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
-def get_loss(config: Config) -> Loss:
+class LossType(str, enum.Enum):
+    CE = "ce"
+    FOCAL = "focal"
+    DICE = "dice"
+    DICE_FOCAL = "dice_focal"
+
+
+def get_loss(config) -> Loss:
     match config.train.loss_type:
-        case "ce":
+        case LossType.CE:
             return nn.CrossEntropyLoss(label_smoothing=config.train.label_smoothing)
-        case "focal":
+        case LossType.FOCAL:
             return FocalLoss(
                 alpha=config.train.focal_loss_alpha,
                 gamma=config.train.focal_loss_gamma,
                 label_smoothing=config.train.label_smoothing,
             )
-        case "dice":
+        case LossType.DICE:
             return DiceLoss(eps=config.train.dice_eps)
-        case "dice_focal":
+        case LossType.DICE_FOCAL:
             return CombinedLoss(
                 l1_weight=config.train.dice_focal_dice_weight,
                 l2_weight=config.train.dice_focal_focal_weight,
@@ -34,7 +40,7 @@ def get_loss(config: Config) -> Loss:
                 ),
             )
         case _:
-            raise ValueError(f"Unknown loss type: {config.train.loss_type}.")
+            raise ValueError(f"Unknown loss type: {config.train.loss_type}.\nValid options: {list(LossType)}.")
 
 
 ReduceType = typing.Literal["mean", "sum"]  # sum can give more weight to less common classes / samples with higher loss
