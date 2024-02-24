@@ -133,11 +133,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
-    sentinel_files: list[Path] = data_dirs.sentinel_files(sort=True)
-    mask_files: list[Path] = data_dirs.osm_files(sort=True)
-    get_mask_file = lambda i: mask_files[get_mask_file_idx(sentinel_files[i])]  # noqa: E731
+    sentinel_files: dict[int, Path] = data_dirs.sentinel_files
+    mask_files: dict[int, Path] = data_dirs.osm_files
     get_sentinel_file_from_mask = (  # noqa: E731
-        lambda i: [f for f in sentinel_files if f.stem.split("_")[0] == mask_files[i].stem][0]
+        lambda osm_i: next(f for f in sentinel_files.values() if get_mask_file_idx(f) == int(mask_files[osm_i].stem))
     )
 
     index = args.n
@@ -147,7 +146,7 @@ if __name__ == "__main__":
         index = max(0, min(index, max_index - 1))
         if not args.reverse:
             sentinel_file = sentinel_files[index]
-            osm_file = get_mask_file(index)
+            osm_file = mask_files[get_mask_file_idx(sentinel_file)]
         else:
             sentinel_file = get_sentinel_file_from_mask(index)
             osm_file = mask_files[get_mask_file_idx(sentinel_file)]

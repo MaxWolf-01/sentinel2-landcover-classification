@@ -36,8 +36,8 @@ class S2OSMDataset(Dataset):
         self.n_time_frames: int = cfg.n_time_frames
         self.squeeeze_time_dim: bool = cfg.squeeze_time_dim
         self.data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
-        self.sentinel_files = self.data_dirs.sentinel_files(sort=True)  # sort would not need to be set
-        self.osm_files = self.data_dirs.osm_files(sort=True)  # sort needs to be set
+        self.sentinel_files: dict[int, Path] = self.data_dirs.sentinel_files
+        self.osm_files: dict[int, Path] = self.data_dirs.osm_files
         assert len(self) > 0, "No data found. Did you run `download_data.py`?"
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
