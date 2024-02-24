@@ -330,7 +330,8 @@ def main() -> None:
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
         dataset = S2OSMDataset(config.datamodule.dataset_cfg)
-        calculate_mean_std(dataset, save_path=dataset.data_dirs.base_path / "mean_std.pt")
+        dim = (0, 2, 3)  # (0, 1, 3, 4) in case we have time dimension
+        calculate_mean_std(dataset, dim=dim, save_path=dataset.data_dirs.base_path / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if args.type == "tune":
