@@ -9,7 +9,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from data.download_data import S2OSMDataDirs
+from src.configs.download_config import DataDirs
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -35,7 +35,7 @@ class S2OSMDataset(Dataset):
         super().__init__()
         self.n_time_frames: int = cfg.n_time_frames
         self.squeeeze_time_dim: bool = cfg.squeeze_time_dim
-        self.data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
+        self.data_dirs = DataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
         self.sentinel_files: dict[int, Path] = self.data_dirs.sentinel_files
         self.osm_files: dict[int, Path] = self.data_dirs.osm_files
         assert len(self) > 0, "No data found. Did you run `download_s2_osm_data.py`?"

@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
-from data.download_s2_osm_data import AOIs, BBox, S2OSMDataDirs
+from data.download_s2_osm_data import AOIs, BBox, DataDirs
 from data.s2osm_dataset import get_mask_file_idx
 from src.configs.label_mappings import LabelMap, MAPS
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
         "Uses the first sentinel file found for the mask file.",
     )
     args = parser.parse_args()
-    data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
+    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
     sentinel_files: dict[int, Path] = data_dirs.sentinel_files
     mask_files: dict[int, Path] = data_dirs.osm_files
     get_sentinel_file_from_mask = (  # noqa: E731
