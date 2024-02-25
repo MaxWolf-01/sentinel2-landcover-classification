@@ -17,14 +17,23 @@ class LossType(str, enum.Enum):
 
 
 def get_loss(config) -> Loss:
+    class_weights = torch.tensor(config.train.loss_class_weights) if config.train.loss_class_weights else None
+    assert (
+        class_weights is None or len(class_weights) == config.num_classes
+    ), f"{len(class_weights)}!={config.num_classes}"
     match config.train.loss_type:
         case LossType.CE:
-            return nn.CrossEntropyLoss(label_smoothing=config.train.label_smoothing)
+            return nn.CrossEntropyLoss(
+                weight=class_weights,
+                label_smoothing=config.train.label_smoothing,
+                ignore_index=0 if config.train.masked_loss else -100,
+            )
         case LossType.FOCAL:
             return FocalLoss(
-                alpha=config.train.focal_loss_alpha,
+                alpha=class_weights or torch.tensor([1.0] * config.num_classes),
                 gamma=config.train.focal_loss_gamma,
                 label_smoothing=config.train.label_smoothing,
+                ignore_index=0 if config.train.masked_loss else -100,
             )
         case LossType.DICE:
             return DiceLoss(eps=config.train.dice_eps)
@@ -34,9 +43,10 @@ def get_loss(config) -> Loss:
                 l2_weight=config.train.dice_focal_focal_weight,
                 l1=DiceLoss(eps=config.train.dice_eps),
                 l2=FocalLoss(
-                    alpha=config.train.focal_loss_alpha,
+                    alpha=class_weights or torch.tensor([1.0] * config.num_classes),
                     gamma=config.train.focal_loss_gamma,
                     label_smoothing=config.train.label_smoothing,
+                    ignore_index=0 if config.train.masked_loss else -100,
                 ),
             )
         case _:
@@ -48,33 +58,39 @@ ReduceType = typing.Literal["mean", "sum"]  # sum can give more weight to less c
 
 @dataclass
 class FocalLoss:
-    alpha: float
+    alpha: torch.Tensor  # (C,)
     gamma: float
     label_smoothing: float
+    ignore_index: int = -100
     reduce_type: ReduceType = "mean"
 
-    def __call__(self, y: torch.Tensor, y_hat: torch.Tensor) -> torch.Tensor:
+    def __call__(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         # https://discuss.pytorch.org/t/focal-loss-for-imbalanced-multi-class-classification-in-pytorch/61289
         ce_loss = F.cross_entropy(
-            y,
             y_hat,
+            y,
             label_smoothing=self.label_smoothing,
+            ignore_index=self.ignore_index,
             reduction="none",  # keep per-batch-item loss
         )
-        pt = torch.exp(-ce_loss)  # log likelihood to likelihood, [0,1]
-        return _reduce((self.alpha * (1 - pt) ** self.gamma * ce_loss), self.reduce_type)
+        pt = torch.exp(-ce_loss)  # log likelihood to likelihood (probabilities), [0,1]
+        alpha = self.alpha.to(y.device).gather(0, y.view(-1)).view(*y.shape)  # map class to alpha
+        focal_loss = alpha * (1 - pt) ** self.gamma * ce_loss
+        return _reduce(focal_loss, self.reduce_type)
 
 
 @dataclass
 class DiceLoss:  # todo this also exists as a torchmetric
     # https://arxiv.org/pdf/1606.04797.pdf
     eps: float = 1e-8
+    ignore_index: int = -100
     reduce_type: ReduceType = "mean"
 
-    def __call__(self, y: torch.Tensor, y_hat: torch.Tensor) -> torch.Tensor:
-        B, num_classes, H, W = y.shape  # assert shape is correct
-        input_soft = F.softmax(y, dim=1)
-        target_one_hot = F.one_hot(y, num_classes=y.shape[1])
+    def __call__(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        B, num_classes, H, W = y_hat.shape
+        mask = (y_hat != self.ignore_index).long().unsqueeze(1)  # type: ignore
+        input_soft = F.softmax(y_hat, dim=1) * mask
+        target_one_hot = F.one_hot(y, num_classes=num_classes) * mask
 
         dims = (1, 2, 3)
         intersection = (input_soft * target_one_hot).sum(dims)

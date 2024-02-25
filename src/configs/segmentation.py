@@ -76,6 +76,7 @@ class TrainConfig:
 
     # loss
     loss_type: LossType
+    masked_loss: bool
 
     # compile
     compile_mode: str
@@ -99,8 +100,8 @@ class TrainConfig:
     seed: int = 42
 
     # loss_type specific
+    loss_class_weights: list[float] | None = None
     label_smoothing: float = 0.0
-    focal_loss_alpha: float | None = None
     focal_loss_gamma: float | None = None
     dice_eps: float | None = None
     dice_focal_dice_weight: float | None = None
@@ -144,8 +145,9 @@ BASE_CONFIG = partial(
         overfit_batches=0.0,
         use_wandb_logger=True,
         # loss
-        loss_type=LossType.FOCAL,
-        focal_loss_alpha=0.25,
+        masked_loss=True,
+        loss_type=LossType.CE,
+        loss_class_weights=[0, 0.35, 0.1, 0.55],  # _, agriculture, nature, sealed soil; TODO set *actual* (1-frquency)?
         focal_loss_gamma=2,
         # lr scheduler
         lr_scheduler_type=None,
