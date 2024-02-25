@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 
 from src.configs.label_mappings import LabelMap, MAPS
 from src.configs.paths import DATA_DIR
-from src.data.download_data import AOIs
+from src.data.download_s2_osm_data import AOIs
 
 
 def calculate_osm_label_distribution_and_percentage(osm_dir: Path) -> tuple[dict[int, int], dict[int, float], list[float]]:

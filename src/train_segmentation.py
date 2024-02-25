@@ -25,7 +25,7 @@ from torchmetrics.classification import MulticlassConfusionMatrix
 
 import src.configs.segmentation as cfg
 from configs.label_mappings import LabelMap, MAPS
-from data.download_data import AOIs
+from data.download_s2_osm_data import AOIs
 from losses import Loss, LossType, get_loss
 from lr_schedulers import LRSchedulerType, get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting

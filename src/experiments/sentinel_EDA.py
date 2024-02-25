@@ -6,7 +6,7 @@ import rasterio
 
 from configs.paths import DATA_DIR
 from src.configs.label_mappings import MAPS
-from src.data.download_data import AOIs
+from src.data.download_s2_osm_data import AOIs
 
 
 def main() -> None:

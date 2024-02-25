@@ -1,4 +1,4 @@
-"""Theoretically, we could also simply use the download_data.py script, but let's keep it separate for now, so we could
+"""Theoretically, we could also simply use the download_s2_osm_data.py script, but let's keep it separate for now, so we could
 e.g. fine-tune the mae on a larger dataset"""
 
 import argparse
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from src.configs.paths import DATA_DIR
-from src.data.download_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
+from src.data.download_s2_osm_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
 
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259

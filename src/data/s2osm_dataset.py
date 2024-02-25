@@ -38,7 +38,7 @@ class S2OSMDataset(Dataset):
         self.data_dirs = S2OSMDataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
         self.sentinel_files: dict[int, Path] = self.data_dirs.sentinel_files
         self.osm_files: dict[int, Path] = self.data_dirs.osm_files
-        assert len(self) > 0, "No data found. Did you run `download_data.py`?"
+        assert len(self) > 0, "No data found. Did you run `download_s2_osm_data.py`?"
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
     def __len__(self) -> int:

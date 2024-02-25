@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
-from data.download_data import AOIs, BBox, S2OSMDataDirs
+from data.download_s2_osm_data import AOIs, BBox, S2OSMDataDirs
 from data.s2osm_dataset import get_mask_file_idx
 from src.configs.label_mappings import LabelMap, MAPS
 

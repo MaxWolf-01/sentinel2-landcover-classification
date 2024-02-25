@@ -308,8 +308,7 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
     """
     try:
         osm_data = ox.features_from_bbox(
-            bbox=segment
-            , tags=tags
+            bbox=segment, tags=tags
         )
         osm_data["class"] = class_label_idx
         return osm_data[["geometry", "class"]]
