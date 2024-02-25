@@ -7,7 +7,7 @@ import albumentations as A
 import lightning.pytorch as pl
 import torch
 
-from data.mae_dataset import MAEDataset, MAEDatasetConfig
+from src.data.mae_dataset import MAEDataset, MAEDatasetConfig
 from src.utils import Subset, get_logger, load_prithvi_mean_std, train_val_test_split
 
 logger = get_logger(__name__)

@@ -34,75 +34,8 @@ from tqdm import tqdm
 from src.configs.label_mappings import BINARY_MAP, LabelMap, MAPS, MULTICLASS_MAP, OSMTagMap
 from src.configs.paths import DATA_DIR, ROOT_DIR
 
+from src.configs.download_config import *
 
-class BBox(typing.NamedTuple):
-    north: float
-    south: float
-    east: float
-    west: float
-
-    def __str__(self, p: int | None = None) -> str:
-        f = f"{{:.{p}f}}" if p is not None else "{}"
-        return (
-            f"(N: {f.format(self.north)}, S: {f.format(self.south)},"
-            f" E: {f.format(self.east)}, W: {f.format(self.west)})"
-        )
-
-
-AOIs: dict[str, BBox] = {
-    "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # rough crop
-    "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # VIE,NÖ,OÖ,NBGLD,Graz
-    "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # AT + bits of neighbours
-    "small": BBox(north=48.286391, south=48.195845, east=16.463699, west=16.311951),  # small area in VIE; 6 segments
-}
-
-DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
-# https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
-BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
-EVALSCRIPT: str = f"""
-    //VERSION=3
-    function setup() {{
-        return {{
-            input: [{{
-                bands: {json.dumps(BANDS)},
-                units: "DN"
-            }}],
-            output: {{
-                bands: {len(BANDS)},
-                sampleType: "INT16"
-            }}
-        }};
-    }}
-
-    function evaluatePixel(sample) {{
-        return [{', '.join([f'sample.{band}' for band in BANDS])}];
-    }}
-"""
-CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-TIME_INTERVAL: tuple[str, str] = ("2023-01-01", "2023-12-31")
-SEGMENT_SIZE: tuple[int, int] = (512, 512)  # width and height of a single segment in pixels
-SEGMENT_LENGTH_KM: float = 5.12  # 512*10m = 5.12km; 10m = lowest sentinel resolution
-LABEL_MAPPINGS: dict[str, LabelMap] = {
-    "multi": MULTICLASS_MAP,
-    "binary": BINARY_MAP,
-}
-MAX_UNLABELED: float = 0.3  # Maximum percentage of unlabeled pixels in a segment
-
-
-class S2OSMDataDirs:
-    def __init__(self, aoi: str, map_type: str) -> None:
-        self.base_path: Path = DATA_DIR / aoi / map_type
-        self.sentinel: Path = self.base_path / "sentinel"
-        self.osm: Path = self.base_path / "osm"
-
-    @property
-    def sentinel_files(self) -> dict[int, Path]:
-        files = sorted(list(self.sentinel.glob("*.tif")), key=lambda path: tuple(map(int, path.stem.split("_"))))
-        return {i: path for i, path in enumerate(files)}
-
-    @property
-    def osm_files(self) -> dict[int, Path]:
-        return {int(path.stem): path for path in sorted(list(self.osm.glob("*.tif")), key=lambda path: int(path.stem))}
 
 
 def main() -> None:
@@ -130,7 +63,7 @@ def main() -> None:
     load_dotenv()
     config = sh.SHConfig(sh_client_id=os.getenv("SH_CLIENT_ID"), sh_client_secret=os.getenv("SH_CLIENT_SECRET"))
 
-    data_dirs = S2OSMDataDirs(aoi=args.aoi, map_type=args.labels)
+    data_dirs = DataDirs(aoi=args.aoi, map_type=args.labels)
     if args.overwrite_sentinel and data_dirs.sentinel.exists() and not args.resume:
         warnings.warn(f"Deleting existing sentinel data: {data_dirs.sentinel}")
         input("Press Enter to continue...")
@@ -228,7 +161,7 @@ def _process_segment(
     idx: int,
     label_map: LabelMap,
     sh_config: sh.SHConfig,
-    data_dirs: S2OSMDataDirs,
+    data_dirs: DataDirs,
     frequency: str,
     get_sentinel: bool,
     get_osm: bool,
@@ -375,7 +308,8 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
     """
     try:
         osm_data = ox.features_from_bbox(
-            north=segment.north, south=segment.south, east=segment.east, west=segment.west, tags=tags
+            bbox=segment
+            , tags=tags
         )
         osm_data["class"] = class_label_idx
         return osm_data[["geometry", "class"]]
