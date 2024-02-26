@@ -4,18 +4,16 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import rasterio
 
-from configs.paths import DATA_DIR
-from src.configs.label_mappings import MAPS
-from src.data.download_s2_osm_data import AOIs
+from configs.data_config import DataDirs
+from src.data.download_data import AOIs
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
     parser.add_argument("--aoi", type=str, default="at", help=f"one of {list(AOIs)}")
     args = parser.parse_args()
 
-    sentinel_dir: Path = DATA_DIR / args.aoi / args.labels / "sentinel"
+    sentinel_dir: Path = DataDirs(aoi=args.aoi, map_type="").sentinel
     print("Data path: ", sentinel_dir)
     sentinel_files = list(sentinel_dir.glob("*.tif"))
     print("Number of files: ", len(sentinel_files))

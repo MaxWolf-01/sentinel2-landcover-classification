@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 from src.configs.paths import DATA_DIR
-from src.data.download_s2_osm_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
+from src.data.download_data import AOIs, BBox, calculate_segments, fetch_sentinel_data, save_sentinel_data_as_geotiff
 
 TIME_INTERVAL: tuple[str, str] = ("2023-07-01", "2023-07-15")  # TODO find suitable time interval
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259

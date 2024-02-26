@@ -16,6 +16,7 @@ class LossType(str, enum.Enum):
     DICE_FOCAL = "dice_focal"
 
 
+# TODO write binary verisions!
 def get_loss(config) -> Loss:
     class_weights = torch.tensor(config.train.loss_class_weights) if config.train.loss_class_weights else None
     assert (

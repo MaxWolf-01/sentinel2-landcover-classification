@@ -10,9 +10,9 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
-from data.download_s2_osm_data import AOIs, BBox, DataDirs
+from configs.data_config import LABEL_MAPS, LabelMap
+from data.download_data import AOIs, BBox, DataDirs
 from data.s2osm_dataset import get_mask_file_idx
-from src.configs.label_mappings import LabelMap, MAPS
 
 
 def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
@@ -122,7 +122,9 @@ def get_color_map(label_map: LabelMap) -> ListedColormap:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--aoi", type=str, default="at", help=f"Default: VIE. Available: {list(AOIs)}")
-    parser.add_argument("--labels", type=str, default="multiclass", help=f"Default: Multiclass. Available:{list(MAPS)}")
+    parser.add_argument(
+        "--labels", type=str, default="osm-multiclass", help=f"Default: Multiclass. Available:{list(LABEL_MAPS)}"
+    )
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     parser.add_argument(
@@ -153,7 +155,7 @@ if __name__ == "__main__":
             assert int(osm_file.stem) == index, f"{osm_file.stem} != {index}"
         assert sentinel_file.stem.split("_")[0] == osm_file.stem, f"{sentinel_file.stem} != {osm_file.stem}"
         print("Showing:", "/".join(sentinel_file.parts[-4:]), "/".join(osm_file.parts[-4:]))
-        plot_sentinel_and_mask(sentinel=sentinel_file, mask=osm_file, label_map=MAPS[args.labels], p=args.p)
+        plot_sentinel_and_mask(sentinel=sentinel_file, mask=osm_file, label_map=LABEL_MAPS[args.labels], p=args.p)
         plt.show(block=False)
         user_input = input("Input:")
         if user_input in "nN":

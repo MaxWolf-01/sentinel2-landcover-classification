@@ -9,7 +9,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.configs.download_config import DataDirs
+from src.configs.data_config import DataDirs
 from src.utils import get_logger
 
 logger = get_logger(__name__)

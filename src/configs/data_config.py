@@ -1,10 +1,25 @@
 import json
 import typing
 from pathlib import Path
-from typing import NamedTuple, Dict
+
 import sentinelhub as sh
 
-from src.configs.label_mappings import LabelMap, BINARY_MAP, MULTICLASS_MAP
+from src.configs.cnes_labell_mappings import (
+    CNES_LABEL_MAP,
+    CNES_SIMPLIFIED_BINARY_AGRICULTURE,
+    CNES_SIMPLIFIED_BINARY_IMPERVIOUS,
+    CNES_SIMPLIFIED_BINARY_NATURE,
+    CNES_SIMPLIFIED_MULTICLASS,
+    CnesLabelMap,
+)
+from src.configs.osm_label_mapping import (
+    OSM_BINARY_AGRICULTURE,
+    OSM_BINARY_IMPERVIOUS,
+    OSM_BINARY_NATURE,
+    OSM_MULTICLASS,
+    OsmLabelMap,
+)
+from src.configs.paths import DATA_DIR
 
 
 class BBox(typing.NamedTuple):
@@ -23,11 +38,9 @@ class BBox(typing.NamedTuple):
 
 class DataDirs:
     def __init__(self, aoi: str, map_type: str) -> None:
-        self.base_path: Path = DATA_DIR / aoi / map_type
+        self.base_path: Path = DATA_DIR / aoi
         self.sentinel: Path = self.base_path / "sentinel"
-        self.osm: Path = self.base_path / "osm"
-        self.land_cover: Path = self.base_path / "land_cover"
-        print(self.base_path / "land_cover")
+        self.label: Path = self.base_path / "label" / map_type
 
     @property
     def sentinel_files(self) -> dict[int, Path]:
@@ -36,21 +49,10 @@ class DataDirs:
 
     @property
     def osm_files(self) -> dict[int, Path]:
-        return {int(path.stem): path for path in sorted(list(self.osm.glob("*.tif")), key=lambda path: int(path.stem))}
+        return {
+            int(path.stem): path for path in sorted(list(self.label.glob("*.tif")), key=lambda path: int(path.stem))
+        }
 
-    @property
-    def french_lc_files(self) -> dict[int, Path]:
-        return {int(path.stem): path for path in
-                sorted(list(self.land_cover.glob("*.tif")), key=lambda path: int(path.stem))}
-
-
-CRS: sh.CRS = sh.CRS.WGS84  # Coordinate Reference System
-DATA_COLLECTION = sh.DataCollection.SENTINEL2_L1C  # Sentinel-2 Level 2A data collection
-RESOLUTION: tuple[int, int] = (512, 512)  # Resolution in pixels (width, height)
-SEGMENT_SIZE: int = 25  # Segment size in kilometers for data processing
-
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = ROOT_DIR / "data"
 
 AOIs: dict[str, BBox] = {
     "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # rough crop
@@ -63,7 +65,26 @@ AOIs: dict[str, BBox] = {
 DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
 BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
-EVALSCRIPT: str = f"""
+CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
+TIME_INTERVAL: tuple[str, str] = ("2023-01-01", "2023-12-31")
+SEGMENT_SIZE: tuple[int, int] = (512, 512)  # width and height of a single segment in pixels
+SEGMENT_LENGTH_KM: float = 5.12  # 512*10m = 5.12km; 10m = lowest sentinel resolution
+MAX_CLOUD_COVER: float = 0.05
+MAX_UNLABELED: float = 0.05  # Maximum percentage of unlabeled pixels in a segment
+LabelMap = OsmLabelMap | CnesLabelMap
+LABEL_MAPS: dict[str, LabelMap] = {
+    "osm-multiclass": OSM_MULTICLASS,
+    "osm-impervious-binary": OSM_BINARY_IMPERVIOUS,
+    "osm-nature-binary": OSM_BINARY_NATURE,
+    "osm-agriculture-binary": OSM_BINARY_AGRICULTURE,
+    "cnes-full": CNES_LABEL_MAP,
+    "cnes-multiclass": CNES_SIMPLIFIED_MULTICLASS,
+    "cnes-impervious-binary": CNES_SIMPLIFIED_BINARY_IMPERVIOUS,
+    "cnes-nature-binary": CNES_SIMPLIFIED_BINARY_NATURE,
+    "cnes-agriculture-binary": CNES_SIMPLIFIED_BINARY_AGRICULTURE,
+}
+
+SENTINEL2_EVALSCRIPT: str = f"""
     //VERSION=3
     function setup() {{
         return {{
@@ -82,18 +103,16 @@ EVALSCRIPT: str = f"""
         return [{', '.join([f'sample.{band}' for band in BANDS])}];
     }}
 """
-CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-TIME_INTERVAL: tuple[str, str] = ("2023-01-01", "2023-12-31")
-SEGMENT_SIZE: tuple[int, int] = (512, 512)  # width and height of a single segment in pixels
-SEGMENT_LENGTH_KM: float = 5.12  # 512*10m = 5.12km; 10m = lowest sentinel resolution
-LABEL_MAPPINGS: dict[str, LabelMap] = {
-    "multi": MULTICLASS_MAP,
-    "binary": BINARY_MAP,
+CNES_LABEL_EVALSCRIPT = """
+//VERSION=3
+function setup() {
+    return {
+        input: [{"bands": ["OCS", "OCS_Confidence", "OCS_Validity"], "units": "DN"}],
+        output: {bands: 3, sampleType: "UINT8"}
+    };
 }
-MAX_UNLABELED: float = 0.3  # Maximum percentage of unlabeled pixels in a segment
 
-# Label mappings, can be extended with actual mappings
-LABEL_MAPPINGS: dict[str, dict] = {
-    "multiclass": {},
-    "binary": {},
+function evaluatePixel(sample) {
+    return [sample.OCS, sample.OCS_Confidence, sample.OCS_Validity];
 }
+"""

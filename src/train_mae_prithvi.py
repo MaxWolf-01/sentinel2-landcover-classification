@@ -19,7 +19,7 @@ from numpy import typing as npt
 
 import src.configs.prithvi_mae_finetune as cfg
 from data.calculate_dataset_statistics import calculate_mean_std
-from data.download_s2_osm_data import AOIs
+from data.download_data import AOIs
 from data.mae_datamodule import MAEDatamodule
 from data.mae_dataset import MAEDataset, MAESample
 from lr_schedulers import get_lr_scheduler

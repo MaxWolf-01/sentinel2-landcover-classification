@@ -119,7 +119,7 @@ class TrainConfig:
 BASE_CONFIG = partial(
     Config,
     datamodule=S2OSMDatamoduleConfig(
-        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="multiclass"),
+        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="osm-multiclass"),
         batch_size=32,
         num_workers=1,
         pin_memory=True,

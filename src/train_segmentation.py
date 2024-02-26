@@ -24,8 +24,8 @@ from torchmetrics import Accuracy, JaccardIndex as IoU
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 import src.configs.segmentation as cfg
-from configs.label_mappings import MAPS
-from data.download_s2_osm_data import AOIs
+from configs.data_config import LABEL_MAPS, LabelMap
+from data.download_data import AOIs
 from losses import Loss, LossType, get_loss
 from lr_schedulers import LRSchedulerType, get_lr_scheduler
 from plotting import load_sentinel_tiff_for_plotting
@@ -48,10 +48,10 @@ class SegmentationModule(pl.LightningModule):
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
         self.net: nn.Module = config.get_model()
         self.loss_fn: Loss = get_loss(config)
-        label_map = MAPS[config.datamodule.dataset_cfg.label_map]
+        label_map: LabelMap = LABEL_MAPS[config.datamodule.dataset_cfg.label_map]
         self.class_labels: dict[int, str] = {i: label for i, label in enumerate(label_map)}
         task: Literal["binary", "multiclass"] = (
-            "binary" if config.datamodule.dataset_cfg.label_map == "binary" else "multiclass"
+            "binary" if "binary" in config.datamodule.dataset_cfg.label_map else "multiclass"
         )
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(
@@ -195,11 +195,11 @@ class SegmentationModule(pl.LightningModule):
         )
 
     def _log_segmentation_pred(
-            self,
-            plot_name: str,
-            dataset: S2OSMDataset,
-            class_labels: dict[int, str],
-            idx: int | None = None,
+        self,
+        plot_name: str,
+        dataset: S2OSMDataset,
+        class_labels: dict[int, str],
+        idx: int | None = None,
     ) -> None:
         if idx is None:
             idx = random.randint(0, len(dataset) - 1)
@@ -295,7 +295,7 @@ def objective(trial: optuna.Trial) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help=f"Model type. One of: {list(cfg.ModelName)}")
-    parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
+    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(LABEL_MAPS)}.")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--loss-type", type=str, default=None, help=f"Available: {list(LossType)}")
     parser.add_argument("--lr-scheduler", type=str, default=None, help=f"Available: {list(LRSchedulerType)}")
@@ -314,8 +314,8 @@ def main() -> None:
 
     config: Config = cfg.BASE_CONFIG(model_name=args.model)
     config = cfg.set_run_type(config, args.type)
-    config.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
     config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.num_classes = len(LABEL_MAPS[config.datamodule.dataset_cfg.label_map])
     config.model_name = args.model or config.model_name
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size

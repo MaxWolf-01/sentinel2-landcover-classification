@@ -14,12 +14,12 @@ import math
 import os
 import shutil
 import time
-import typing
 import warnings
 from pathlib import Path
 
 import einops
 import geopandas as gpd
+import numpy as np
 import numpy.typing as npt
 import osmnx as ox
 import pandas as pd
@@ -31,17 +31,32 @@ from rasterio.features import rasterize
 from rasterio.transform import from_origin
 from tqdm import tqdm
 
-from src.configs.label_mappings import BINARY_MAP, LabelMap, MAPS, MULTICLASS_MAP, OSMTagMap
-from src.configs.paths import DATA_DIR, ROOT_DIR
-
-from src.configs.download_config import *
-
+from src.configs.cnes_labell_mappings import map_cnes_label_to_simplified_category
+from src.configs.data_config import (
+    AOIs,
+    BANDS,
+    BBox,
+    CNES_LABEL_EVALSCRIPT,
+    CRS,
+    DATA_COLLECTION,
+    DataDirs,
+    LABEL_MAPS,
+    LabelMap,
+    MAX_CLOUD_COVER,
+    MAX_UNLABELED,
+    SEGMENT_LENGTH_KM,
+    SEGMENT_SIZE,
+    SENTINEL2_EVALSCRIPT,
+    TIME_INTERVAL,
+)
+from src.configs.osm_label_mapping import OSMTagMap
+from src.configs.paths import ROOT_DIR
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--aoi", type=str, default="vie", help=f"Specify an AOI. Default: VIE. Available:{list(AOIs)}")
-    parser.add_argument("--labels", type=str, default="multiclass", help="Specify a label mapping to use.")
+    parser.add_argument("--labels", type=str, default="osm-multiclass", help="Specify a label mapping to use.")
     parser.add_argument("--workers", type=int, default=1, help="Specify the number of workers.")
     parser.add_argument("--parallel", action="store_true", help="Use parallel processing.")
     parser.add_argument(
@@ -51,11 +66,17 @@ def main() -> None:
         help="Pandas time frequency string. Determines how many images to fetch for a given segment. Default: QS.",
     )
     parser.add_argument("--overwrite-sentinel", action="store_true", help="re-download existing sentinel data.")
-    parser.add_argument("--overwrite-osm", action="store_true", help="re-download existing OSM data.")
+    parser.add_argument("--overwrite-labels", action="store_true", help="re-download existing label data.")
     parser.add_argument("--resume", action="store_true", help="Skip already downloaded segments. Don't overwrite.")
+    parser.add_argument("--cnes", action="store_true", help="Use CNES land cover labels instead of OSM.")
     args = parser.parse_args()
-    assert (args.overwrite_sentinel or args.overwrite_osm) and args.overwrite_osm, "can only overwrite osm or both."
-    label_map = MAPS[args.labels]
+    assert (
+        args.cnes and args.labels.startswith("cnes") or not args.cnes and not args.labels.startswith("cnes")
+    ), "if you want to download cnes, pick a map starting with cnes. if not, remove the cnes flag"
+    assert (
+        args.overwrite_sentinel or args.overwrite_labels
+    ) and args.overwrite_labels, "can only overwrite labels or both."
+    label_map = LABEL_MAPS[args.labels]
 
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(ROOT_DIR / "osmnx_cache")
@@ -68,11 +89,11 @@ def main() -> None:
         warnings.warn(f"Deleting existing sentinel data: {data_dirs.sentinel}")
         input("Press Enter to continue...")
         shutil.rmtree(data_dirs.sentinel)
-    if args.overwrite_osm and data_dirs.osm.exists() and not args.resume:
-        warnings.warn(f"Deleting existing osm data: {data_dirs.osm}")
+    if args.overwrite_labels and data_dirs.label.exists() and not args.resume:
+        warnings.warn(f"Deleting existing osm data: {data_dirs.label}")
         input("Press Enter to continue...")
-        shutil.rmtree(data_dirs.osm, ignore_errors=True)
-    data_dirs.osm.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(data_dirs.label, ignore_errors=True)
+    data_dirs.label.mkdir(parents=True, exist_ok=True)
     data_dirs.sentinel.mkdir(parents=True, exist_ok=True)
 
     segments: list[BBox] = calculate_segments(bbox=AOIs[args.aoi], segment_size_km=SEGMENT_LENGTH_KM)
@@ -113,7 +134,8 @@ def main() -> None:
                 data_dirs,
                 args.frequency,
                 args.overwrite_sentinel,
-                args.overwrite_osm,
+                args.overwrite_labels,
+                args.cnes,
             ): (idx, segment)
             for idx, segment in enumerate(segments)
             if idx not in skip_indices
@@ -164,16 +186,30 @@ def _process_segment(
     data_dirs: DataDirs,
     frequency: str,
     get_sentinel: bool,
-    get_osm: bool,
+    get_labels: bool,
+    use_cnes_labels: bool,
 ) -> None:
     time_intervals: list[tuple[str, str]] = _split_up_time_interval(TIME_INTERVAL, frequency=frequency)
     assert len(time_intervals) > 0, "No time intervals found. Check your time interval and frequency settings."
 
-    if get_osm:
-        osm_data: gpd.GeoDataFrame = _fetch_osm_data(segment, tag_mapping=label_map)
-        valid_mask = _save_rasterized_osm_data(osm_data, aoi=segment, idx=idx, other_cls_label=0, osm_dir=data_dirs.osm)
-        if not valid_mask:
-            return
+    if get_labels:
+        if use_cnes_labels:
+            # TODO validate data with CNES confidence band... in request/evalscript?
+            data = _fetch_cnes_land_cover_labels(segment=segment, sh_config=sh_config, time_interval=time_intervals[0])
+            print(data.shape)
+            print(np.unique(data))
+            data = map_cnes_label_to_simplified_category(labels=data, label_map=label_map)
+            _save_cnes_labels(data, aoi=segment, idx=idx, cnes_dir=data_dirs.label)
+        else:
+            mask_is_valid: bool = _save_rasterized_osm_data(
+                gdf=_fetch_osm_data(segment=segment, tag_mapping=label_map),
+                aoi=segment,
+                idx=idx,
+                other_cls_label=0,
+                osm_dir=data_dirs.label,
+            )
+            if not mask_is_valid:
+                return
 
     if not get_sentinel:
         return
@@ -235,12 +271,12 @@ def calculate_segments(bbox: BBox, segment_size_km: float) -> list[BBox]:
 
 def fetch_sentinel_data(segment: BBox, sh_config: sh.SHConfig, time_interval: tuple[str, str]) -> npt.NDArray:
     request = sh.SentinelHubRequest(
-        evalscript=EVALSCRIPT,
+        evalscript=SENTINEL2_EVALSCRIPT,
         input_data=[
             sh.SentinelHubRequest.input_data(
                 data_collection=DATA_COLLECTION,
                 time_interval=time_interval,
-                maxcc=0.05,
+                maxcc=MAX_CLOUD_COVER,
                 mosaicking_order=sh.MosaickingOrder.LEAST_CC,
                 upsampling=sh.ResamplingType.BICUBIC,
             )
@@ -324,7 +360,8 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, i
     shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
     burned = rasterize(shapes=shapes, out_shape=SEGMENT_SIZE, transform=transform, fill=other_cls_label, dtype="uint8")
 
-    if (zero_sum := (burned == 0).sum()) > MAX_UNLABELED * burned.size:
+    # FIXME CHECK ONLY IF LABELS ARE NOT BINARY!
+    if (zero_sum := (burned == 0).sum()) > MAX_UNLABELED * burned.size:  # TODO move this check before this function?!
         print(f"Segment {idx} has too many unlabeled pixels: {(zero_sum / burned.size):.2f}")
         return False
 
@@ -341,6 +378,40 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, i
     ) as f:
         f.write_band(1, burned)
     return True
+
+
+def _fetch_cnes_land_cover_labels(segment: BBox, sh_config: sh.SHConfig, time_interval: tuple[str, str]) -> npt.NDArray:
+    request = sh.SentinelHubRequest(
+        evalscript=CNES_LABEL_EVALSCRIPT,
+        input_data=[
+            sh.SentinelHubRequest.input_data(
+                data_collection=sh.DataCollection.define_byoc(collection_id="9baa2732-6597-49d2-ae3b-68ba0a5386b2"),
+                time_interval=time_interval,
+            )
+        ],
+        responses=[sh.SentinelHubRequest.output_response("default", sh.MimeType.TIFF)],
+        bbox=sh.BBox((segment.west, segment.south, segment.east, segment.north), crs=CRS),
+        size=SEGMENT_SIZE,
+        config=sh_config,
+    )
+    return request.get_data()[0]
+
+
+def _save_cnes_labels(data: npt.NDArray, aoi: BBox, idx: int, cnes_dir: Path) -> None:
+    pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, SEGMENT_SIZE)
+    transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
+    with rasterio.open(
+        fp=cnes_dir / f"{idx}.tif",
+        mode="w",
+        driver="GTiff",
+        height=SEGMENT_SIZE[0],
+        width=SEGMENT_SIZE[1],
+        count=1,
+        dtype="uint8",
+        crs=CRS,
+        transform=transform,
+    ) as f:
+        f.write_band(1, data)
 
 
 def _visualize_segment_bbox() -> None:
