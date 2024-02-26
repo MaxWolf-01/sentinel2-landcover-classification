@@ -62,7 +62,6 @@ MULTICLASS_MAP: LabelMap = {
                 "protected_area",
             ],
             "landuse": [
-                "allotments",
                 "forest",
                 "forestry",
                 "grass",
@@ -70,7 +69,6 @@ MULTICLASS_MAP: LabelMap = {
                 "meadow",
                 "mountain_pass",
                 "mountain_ridge",
-                "recreation_ground",
                 "village_green",
             ],
             "leisure": [
@@ -121,11 +119,6 @@ MULTICLASS_MAP: LabelMap = {
             ],
             "barrier": [
                 "city_wall",
-                "fence",
-                "guard_rail",
-                "kerb",
-                "retaining_wall",
-                "wall",
             ],
             "building": True,
             "highway": True,
@@ -138,7 +131,6 @@ MULTICLASS_MAP: LabelMap = {
                 "garages",
                 "impervious_surface",
                 "industrial",
-                "institutional",
                 "landfill",
                 "military",
                 "port",
@@ -154,7 +146,6 @@ MULTICLASS_MAP: LabelMap = {
             "man_made": [
                 "bridge",
                 "pier",
-                "reservoir_covered",
                 "tower",
                 "wastewater_plant",
                 "water_works",
@@ -175,12 +166,6 @@ MULTICLASS_MAP: LabelMap = {
                 "paving_stones",
                 "sett",
                 "unhewn_cobblestone",
-            ],
-            "tourism": [
-                "aquarium",
-                "attraction",
-                "theme_park",
-                "zoo",
             ],
             "waterway": [
                 "dock",
