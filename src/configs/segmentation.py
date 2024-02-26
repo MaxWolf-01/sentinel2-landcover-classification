@@ -123,32 +123,35 @@ BASE_CONFIG = partial(
         batch_size=32,
         num_workers=1,
         pin_memory=True,
-        augment=True,
         data_split=(0.8, 0.2, 0.0),
         val_batch_size_multiplier=2,
-        # transforms
-        random_crop_size=224,
+        # augmentations
+        augment=True,
+        random_vertical_flip_p=0.5,
+        random_horizontal_flip_p=0.5,
     ),
     train=TrainConfig(
         project_name="sentinel-segmentation",
         lr=1.5e-05,
         weight_decay=0.05,
         betas=(0.9, 0.999),
-        float32_matmul_precision="high",  # todo set to medium later
+        float32_matmul_precision="medium",
         compile_mode="max-autotune",
         compile_fullgraph=True,
         compile_disable=False,
         max_epochs=-1,
         log_interval=50,
         devices=1,
-        precision="32-true",  # todo set to bf16 later
+        precision="bf16",
         overfit_batches=0.0,
         use_wandb_logger=True,
-        # loss
         masked_loss=True,
         loss_type=LossType.CE,
-        loss_class_weights=[0, 0.35, 0.1, 0.55],  # _, agriculture, nature, sealed soil; TODO set *actual* (1-frquency)?
+        # [0, 0.35, 0.1, 0.55],  # _, agriculture, nature, sealed soil; TODO set *actual* (1-frquency)?
+        loss_class_weights=None,
         focal_loss_gamma=2,
+        dice_focal_dice_weight=0.5,
+        dice_focal_focal_weight=0.5,
         # lr scheduler
         lr_scheduler_type=None,
     ),
