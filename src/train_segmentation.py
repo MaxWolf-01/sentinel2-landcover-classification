@@ -24,7 +24,7 @@ from torchmetrics import Accuracy, JaccardIndex as IoU
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 import src.configs.segmentation as cfg
-from configs.label_mappings import LabelMap, MAPS
+from configs.label_mappings import MAPS
 from data.download_data import AOIs
 from losses import Loss, LossType, get_loss
 from lr_schedulers import LRSchedulerType, get_lr_scheduler
@@ -48,12 +48,17 @@ class SegmentationModule(pl.LightningModule):
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
         self.net: nn.Module = config.get_model()
         self.loss_fn: Loss = get_loss(config)
-        self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
+        label_map = MAPS[config.datamodule.dataset_cfg.label_map]
+        self.class_labels: dict[int, str] = {i: label for i, label in enumerate(label_map)}
         task: Literal["binary", "multiclass"] = (
             "binary" if config.datamodule.dataset_cfg.label_map == "binary" else "multiclass"
         )
         metrics = lambda: {  # noqa: E731
-            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.num_classes),
+            "confusion_matrix": MulticlassConfusionMatrix(
+                num_classes=config.num_classes,
+                ignore_index=0 if config.train.masked_loss else None,
+                normalize="true",
+            ),
             "iou": IoU(task=task, num_classes=config.num_classes),
             "accuracy": Accuracy(task=task, num_classes=config.num_classes),
             "f1": torchmetrics.F1Score(task=task, num_classes=config.num_classes),
@@ -140,7 +145,7 @@ class SegmentationModule(pl.LightningModule):
 
         self.log(f"{mode}/loss", loss)
 
-        self.update_metrics(mode, predictions=torch.argmax(logits, dim=1), labels=y)
+        self.update_metrics(mode, predictions=logits.argmax(dim=1), labels=y)
 
         return loss
 
@@ -161,12 +166,15 @@ class SegmentationModule(pl.LightningModule):
             if np.prod(metric_value.shape) == 1:
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
-    def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+    def log_image_metrics(self, computed_metrics: dict[str, np.ndarray], mode: Mode) -> None:
         if not isinstance(self.logger, WandbLogger):
             return
-        # confusion matrix
-        class_labels: dict[int, str] = {i: label for i, label in enumerate(self.label_map)}
-        log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
+        confusion_matrix = computed_metrics["confusion_matrix"]
+        class_labels = self.class_labels
+        if self.config.train.masked_loss:  # remove background class from confusion matrix
+            confusion_matrix = confusion_matrix[1:, 1:]
+            class_labels = {k: v for k, v in class_labels.items() if k != 0}
+        log_confusion_matrix(mode, conf_matrix=confusion_matrix, class_labels=class_labels)
         # segmentation predictions
         dataset: S2OSMDataset = self.trainer.val_dataloaders.dataset.dataset
         if mode == "train":
@@ -177,13 +185,13 @@ class SegmentationModule(pl.LightningModule):
             f"{mode}/segmentation",
             dataset=dataset,
             idx=None,  # random
-            class_labels=class_labels,
+            class_labels=self.class_labels,
         )
         self._log_segmentation_pred(
             f"{mode}/fixed_prediction_dynamics",
             dataset=dataset,
             idx=0,
-            class_labels=class_labels,
+            class_labels=self.class_labels,
         )
 
     def _log_segmentation_pred(
@@ -215,13 +223,8 @@ class SegmentationModule(pl.LightningModule):
 
 
 def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
-    row_sums = conf_matrix.sum(axis=1, keepdims=True)
-    normalized_conf_matrix = conf_matrix / row_sums
-
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(normalized_conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=normalized_conf_matrix.max()))
-    fig.colorbar(cax)
-
+    fig.colorbar(ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=conf_matrix.max())))
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
     ax.set_xticks((ticks := np.arange(len(class_labels))))
@@ -230,7 +233,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
     ax.set_yticklabels(label_texts)
     plt.tight_layout()
 
-    for (i, j), val in np.ndenumerate(normalized_conf_matrix):
+    for (i, j), val in np.ndenumerate(conf_matrix):
         ax.text(j, i, f"{val:.2f}", ha="center", va="center", color="black")
 
     buf = io.BytesIO()
