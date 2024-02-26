@@ -86,7 +86,7 @@ LABEL_MAPPINGS: dict[str, LabelMap] = {
     "multi": MULTICLASS_MAP,
     "binary": BINARY_MAP,
 }
-MAX_UNLABELED: float = 0.3  # Maximum percentage of unlabeled pixels in a segment
+MAX_UNLABELED: float = 0.05  # Maximum percentage of unlabeled pixels in a segment
 
 
 class S2OSMDataDirs:
