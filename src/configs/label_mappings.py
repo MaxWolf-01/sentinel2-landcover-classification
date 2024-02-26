@@ -62,6 +62,7 @@ MULTICLASS_MAP: LabelMap = {
                 "protected_area",
             ],
             "landuse": [
+                "allotments",
                 "forest",
                 "forestry",
                 "grass",
