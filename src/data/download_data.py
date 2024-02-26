@@ -91,9 +91,9 @@ MAX_UNLABELED: float = 0.05  # Maximum percentage of unlabeled pixels in a segme
 
 class S2OSMDataDirs:
     def __init__(self, aoi: str, map_type: str) -> None:
-        self.base_path: Path = DATA_DIR / aoi / map_type
+        self.base_path: Path = DATA_DIR / aoi
         self.sentinel: Path = self.base_path / "sentinel"
-        self.osm: Path = self.base_path / "osm"
+        self.osm: Path = self.base_path / "osm" / map_type
 
     @property
     def sentinel_files(self) -> dict[int, Path]:
@@ -121,7 +121,7 @@ def main() -> None:
     parser.add_argument("--overwrite-osm", action="store_true", help="re-download existing OSM data.")
     parser.add_argument("--resume", action="store_true", help="Skip already downloaded segments. Don't overwrite.")
     args = parser.parse_args()
-    assert args.overwrite_sentinel or args.overwrite_osm, "You need to set at least one overwrite flag to True."
+    assert (args.overwrite_sentinel or args.overwrite_osm) and args.overwrite_osm, "can only overwrite osm or both."
     label_map = MAPS[args.labels]
 
     ox.settings.use_cache = True
@@ -201,7 +201,7 @@ def main() -> None:
                         "Or don't use the --parallel flag to use threads instead of processes."
                     )
                 raise e
-    print(f"Collected {len(list(data_dirs.sentinel.glob('*.tif')))} sentinel images for {len(segments)} osm masks.")
+    print(f"Collected {len(data_dirs.sentinel_files)} sentinel images for {len(data_dirs.osm_files)} osm masks.")
     with (data_dirs.base_path / "metadata.json").open("w") as f:  # write settings to file for reproducibility/info
         json.dump(get_metadata_dict(args, segments), f, indent=4)
     resume_indicies_file.unlink(missing_ok=True)
