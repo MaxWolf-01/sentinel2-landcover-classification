@@ -25,7 +25,9 @@ class S2OSMDatamoduleConfig:
     val_batch_size_multiplier: int
 
     # transform params
-    random_crop_size: int
+    random_horizontal_flip_p: float
+    random_vertical_flip_p: float
+    random_crop_size: int = 224
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
@@ -69,9 +71,8 @@ class S2OSMDatamodule(pl.LightningDataModule):
 
         augmentation_transforms = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            # todo add transforms after evaluation pipeline is set up
-            # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
-            # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
+            A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
+            A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
             A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         # necessary transforms

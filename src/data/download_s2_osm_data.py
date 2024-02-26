@@ -54,7 +54,7 @@ def main() -> None:
     parser.add_argument("--overwrite-osm", action="store_true", help="re-download existing OSM data.")
     parser.add_argument("--resume", action="store_true", help="Skip already downloaded segments. Don't overwrite.")
     args = parser.parse_args()
-    assert args.overwrite_sentinel or args.overwrite_osm, "You need to set at least one overwrite flag to True."
+    assert (args.overwrite_sentinel or args.overwrite_osm) and args.overwrite_osm, "can only overwrite osm or both."
     label_map = MAPS[args.labels]
 
     ox.settings.use_cache = True
@@ -134,7 +134,7 @@ def main() -> None:
                         "Or don't use the --parallel flag to use threads instead of processes."
                     )
                 raise e
-    print(f"Collected {len(list(data_dirs.sentinel.glob('*.tif')))} sentinel images for {len(segments)} osm masks.")
+    print(f"Collected {len(data_dirs.sentinel_files)} sentinel images for {len(data_dirs.osm_files)} osm masks.")
     with (data_dirs.base_path / "metadata.json").open("w") as f:  # write settings to file for reproducibility/info
         json.dump(get_metadata_dict(args, segments), f, indent=4)
     resume_indicies_file.unlink(missing_ok=True)
@@ -308,7 +308,7 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
     """
     try:
         osm_data = ox.features_from_bbox(
-            bbox=segment, tags=tags
+            north=segment.north, south=segment.south, east=segment.east, west=segment.west, tags=tags
         )
         osm_data["class"] = class_label_idx
         return osm_data[["geometry", "class"]]
