@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     index = args.n
     max_index = len(sentinel_files)
-    print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\nq: quit")
+    print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\n{index} to jump\nq: quit")
     while True:
         index = max(0, min(index, max_index - 1))
         if not args.reverse:
@@ -163,6 +163,8 @@ if __name__ == "__main__":
         elif user_input == "q":
             plt.close("all")
             break
+        elif user_input.isnumeric():
+            index = int(user_input)
         else:
             continue
         if user_input.isupper():
