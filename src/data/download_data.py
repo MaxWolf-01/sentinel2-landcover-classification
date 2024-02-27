@@ -40,6 +40,8 @@ AOIs: dict[str, BBox] = {
     "vie": BBox(north=48.341646, south=47.739323, east=16.567383, west=15.117188),  # ca. 20 tifs; rough crop
     "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # 151 tifs;VIE,NÖ,OÖ,NBGLD,Graz
     "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # 456 tifs; AT + bits of neighbours
+    "mun": BBox(north=49.131408, south=48.193557, east=2.886658, west=0.532837),  # 55 tifs; Munich + surroundings
+    "zur": BBox(north=46.999456, south=46.770909, east=7.995987, west=7.341614),  # 6 tifs; Zurich + bits of mountains
 }
 
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)

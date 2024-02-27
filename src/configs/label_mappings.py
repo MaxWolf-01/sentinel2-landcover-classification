@@ -4,7 +4,6 @@ OSMTagMap = dict[str, str | bool]  # collection of osm tags, see parameter tags 
 
 
 class LabelEntry(typing.TypedDict):
-    idx: int
     color: str
     osm_tags: OSMTagMap
 
@@ -17,8 +16,7 @@ MULTICLASS_MAP: LabelMap = {
         "osm_tags": {},
     },
     "nature": {
-        "idx": 1,
-        "color": "#00ff00",
+        "color": "#a12da9",
         "osm_tags": {
             "landuse": [
                 "forest",
@@ -36,11 +34,10 @@ MULTICLASS_MAP: LabelMap = {
             "boundary": ["national_park", "protected_area"],
             "wetland": ["bog", "swamp", "marsh", "reedbed", "fen"],
             "surface": ["grass", "earth", "mud", "sand", "rock"],
-            "region": ["natural_area", "mountain_range"],
+            "region": ["natural_area", "mountain_range", "mountain_area"],
         },
     },
     "impervious_surface": {
-        "idx": 2,
         "color": "#646464",
         "osm_tags": {
             "highway": True,
@@ -76,7 +73,6 @@ MULTICLASS_MAP: LabelMap = {
         },
     },
     "agriculture": {
-        "idx": 3,
         "color": "#f5a142",
         "osm_tags": {
             "landuse": [
