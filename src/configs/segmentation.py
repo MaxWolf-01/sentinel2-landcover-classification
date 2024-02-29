@@ -12,8 +12,8 @@ from losses import LossType
 from lr_schedulers import LRSchedulerType
 from modules.efficientnet_unet import EfficientNetConfig, EfficientnetUnet
 from modules.prithvi_segmentation import PrithviSegmentationNet, PrithviSegmentationNetConfig
-from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
-from src.data.s2osm_dataset import S2OSMDatasetConfig
+from data.s2osm_datamodule import S2OSMDatamoduleConfig
+from data.s2osm_dataset import S2OSMDatasetConfig
 
 ModelConfig = PrithviSegmentationNetConfig | EfficientNetConfig
 

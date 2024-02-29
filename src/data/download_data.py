@@ -196,8 +196,6 @@ def _process_segment(
         if use_cnes_labels:
             # TODO validate data with CNES confidence band... in request/evalscript?
             data = _fetch_cnes_land_cover_labels(segment=segment, sh_config=sh_config, time_interval=time_intervals[0])
-            print(data.shape)
-            print(np.unique(data))
             data = map_cnes_label_to_simplified_category(labels=data, label_map=label_map)
             _save_cnes_labels(data, aoi=segment, idx=idx, cnes_dir=data_dirs.label)
         else:
@@ -408,7 +406,7 @@ def _save_cnes_labels(data: npt.NDArray, aoi: BBox, idx: int, cnes_dir: Path) ->
         width=SEGMENT_SIZE[1],
         count=1,
         dtype="uint8",
-        crs=CRS,
+        crs='EPSG:4326', #TODO remove
         transform=transform,
     ) as f:
         f.write_band(1, data)

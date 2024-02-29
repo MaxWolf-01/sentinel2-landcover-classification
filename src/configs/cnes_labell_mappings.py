@@ -74,10 +74,13 @@ CNES_TO_SIMPLIFIED: dict[int, str] = {
 
 
 def map_cnes_label_to_simplified_category(labels: np.ndarray, label_map: CnesLabelMap) -> np.ndarray:
+    first_dimension_labels = labels[:, :, 0]  #TODO: Change if using multiple dimensions of CNES
+
     label_keys: list[str] = list(label_map.keys())
 
     def map_func(x: int) -> int:
         return label_keys.index(CNES_TO_SIMPLIFIED[x])
 
-    mapped_labels = np.vectorize(map_func)(labels)
+    mapped_labels = np.vectorize(map_func)(first_dimension_labels)
     return mapped_labels.astype(int)
+

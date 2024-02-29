@@ -60,13 +60,15 @@ AOIs: dict[str, BBox] = {
     "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # AT + bits of neighbours
     "small": BBox(north=48.286391, south=48.195845, east=16.463699, west=16.311951),  # small area in VIE; 6 segments
     "fr": BBox(west=4.508514, south=45.477466, east=5.284424, north=45.897655),  # Lyon in france
+    "fr-limoges": BBox(north=49.267805, south=43.596306, east=6.008148, west=-1.087713) # limoges
+
 }
 
 DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly corrected data
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
 BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-TIME_INTERVAL: tuple[str, str] = ("2023-01-01", "2023-12-31")
+TIME_INTERVAL: tuple[str, str] = ("2018-01-01", "2019-12-31")
 SEGMENT_SIZE: tuple[int, int] = (512, 512)  # width and height of a single segment in pixels
 SEGMENT_LENGTH_KM: float = 5.12  # 512*10m = 5.12km; 10m = lowest sentinel resolution
 MAX_CLOUD_COVER: float = 0.05
@@ -105,14 +107,12 @@ SENTINEL2_EVALSCRIPT: str = f"""
 """
 CNES_LABEL_EVALSCRIPT = """
 //VERSION=3
-function setup() {
-    return {
-        input: [{"bands": ["OCS", "OCS_Confidence", "OCS_Validity"], "units": "DN"}],
-        output: {bands: 3, sampleType: "UINT8"}
-    };
-}
-
-function evaluatePixel(sample) {
-    return [sample.OCS, sample.OCS_Confidence, sample.OCS_Validity];
-}
-"""
+    function setup() {
+        return {
+            input: [{"bands": ["OCS", "OCS_Confidence", "OCS_Validity"], "units": "DN"}],
+            output: {bands: 3, sampleType: "UINT8"}
+        };
+    }
+    function evaluatePixel(sample) {
+        return [sample.OCS, sample.OCS_Confidence, sample.OCS_Validity];
+    } """
