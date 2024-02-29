@@ -9,8 +9,8 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.configs.data_config import DataDirs
-from src.utils import get_logger
+from configs.data_config import DataDirs
+from utils import get_logger
 
 logger = get_logger(__name__)
 

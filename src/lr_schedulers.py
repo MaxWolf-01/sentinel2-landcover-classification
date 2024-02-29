@@ -4,7 +4,7 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
-from src.utils import get_logger
+from utils import get_logger
 
 logger = get_logger(__name__)
 
