@@ -60,8 +60,8 @@ CNES_TO_SIMPLIFIED: dict[int, str] = {
     11: _AGRICULTURE_KEY,  # Rice
     12: _AGRICULTURE_KEY,  # Tubers/roots
     13: _NATURE_KEY,  # Grasslands
-    14: _NATURE_KEY,  # Orchards and fruit growing
-    15: _NATURE_KEY,  # Vineyards
+    14: _AGRICULTURE_KEY,  # Orchards and fruit growing
+    15: _AGRICULTURE_KEY,  # Vineyards
     16: _NATURE_KEY,  # Hardwood forest
     17: _NATURE_KEY,  # Softwood forest
     18: _NATURE_KEY,  # Natural grasslands and pastures
