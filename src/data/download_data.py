@@ -7,6 +7,9 @@ MS/2MS/QS seem to be the most useful frequencies (monthly, every two months, qua
 The sentinel images are saved as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}_{time: int}.tif`
 The corresponding osm masks as `./data/{parent_aoi: str}/{label_mapping: str}/{segment_aoi: int}.tif`
 """
+# TODO this should really be split up into two scripts: 1 that downloads sentinel and 1 that downloads labels.
+#   we should just download all the sentinels, since e.g. if we use binary labels, we dont skip any files due to
+#   thresold anyways
 import argparse
 import concurrent
 import json
@@ -19,7 +22,6 @@ from pathlib import Path
 
 import einops
 import geopandas as gpd
-import numpy as np
 import numpy.typing as npt
 import osmnx as ox
 import pandas as pd
@@ -50,7 +52,7 @@ from src.configs.data_config import (
     TIME_INTERVAL,
 )
 from src.configs.osm_label_mapping import OSMTagMap
-from src.configs.paths import ROOT_DIR
+from src.configs.paths import LOG_DIR, ROOT_DIR
 
 
 def main() -> None:
@@ -72,7 +74,7 @@ def main() -> None:
     args = parser.parse_args()
     assert (
         args.cnes and args.labels.startswith("cnes") or not args.cnes and not args.labels.startswith("cnes")
-    ), "if you want to download cnes, pick a map starting with cnes. if not, remove the cnes flag"
+    ), "if you want to download cnes, pick a map starting with cnes and add --cnes. if not, remove the cnes flag"
     assert (
         args.overwrite_sentinel or args.overwrite_labels
     ) and args.overwrite_labels, "can only overwrite labels or both."
@@ -118,6 +120,9 @@ def main() -> None:
     with resume_metadata_file.open("w") as f:
         json.dump(get_metadata_dict(args, segments), f, indent=4)
 
+    log_file = LOG_DIR / "download.log"
+    log_file.unlink(missing_ok=True)
+
     executor = (
         concurrent.futures.ProcessPoolExecutor(max_workers=args.workers)
         if args.parallel
@@ -136,6 +141,7 @@ def main() -> None:
                 args.overwrite_sentinel,
                 args.overwrite_labels,
                 args.cnes,
+                "binray" in args.labels,  # for skipping threshold check
             ): (idx, segment)
             for idx, segment in enumerate(segments)
             if idx not in skip_indices
@@ -143,10 +149,13 @@ def main() -> None:
         for future in tqdm(concurrent.futures.as_completed(future_to_segment), total=len(future_to_segment)):
             idx, segment = future_to_segment[future]
             try:
-                future.result()
+                info = future.result()
                 skip_indices.append(idx)
                 with resume_indicies_file.open("w") as f:
                     json.dump({"skip_indices": skip_indices}, f, indent=4)
+                if info:
+                    with log_file.open("a") as f:
+                        f.write(info + "\n")
             except Exception as e:
                 print(f"Segment {segment} idx:{idx} generated an exception.")
                 if "terminated abruptly" in str(e):
@@ -188,7 +197,8 @@ def _process_segment(
     get_sentinel: bool,
     get_labels: bool,
     use_cnes_labels: bool,
-) -> None:
+    binary: bool,
+) -> str | None:
     time_intervals: list[tuple[str, str]] = _split_up_time_interval(TIME_INTERVAL, frequency=frequency)
     assert len(time_intervals) > 0, "No time intervals found. Check your time interval and frequency settings."
 
@@ -197,17 +207,21 @@ def _process_segment(
             # TODO validate data with CNES confidence band... in request/evalscript?
             data = _fetch_cnes_land_cover_labels(segment=segment, sh_config=sh_config, time_interval=time_intervals[0])
             data = map_cnes_label_to_simplified_category(labels=data, label_map=label_map)
+            passes, zero_count = _passes_unlabeled_threshold(data)
+            if passes and not binary:
+                return f"Segment {idx} has too many unlabeled pixels: {zero_count / data.size:.2f}"
             _save_cnes_labels(data, aoi=segment, idx=idx, cnes_dir=data_dirs.label)
         else:
-            mask_is_valid: bool = _save_rasterized_osm_data(
+            unlabeled_ratio_info: int | None = _save_rasterized_osm_data(
                 gdf=_fetch_osm_data(segment=segment, tag_mapping=label_map),
                 aoi=segment,
                 idx=idx,
                 other_cls_label=0,
                 osm_dir=data_dirs.label,
+                binary=binary,
             )
-            if not mask_is_valid:
-                return
+            if unlabeled_ratio_info is not None:
+                return f"Segment {idx} has too many unlabeled pixels: {unlabeled_ratio_info:.2f}"
 
     if not get_sentinel:
         return
@@ -314,7 +328,7 @@ def _calculate_pixel_size(aoi: BBox, resolution: tuple[int, int]) -> tuple[float
 
 def _fetch_osm_data(segment: BBox, tag_mapping: LabelMap) -> gpd.GeoDataFrame:
     """Fetch individual labels -> concant to one -> put on top of aoi segment filled with 'other' label
-    NOTE: If there are overlapping features, the last one will be used. TODO make sure sealing is highest prio!
+    NOTE: If there are overlapping features, the last one will be used.
     """
     gdf_list = [
         _fetch_osm_data_by_tags(segment, tags=label["osm_tags"], class_label_idx=i)
@@ -351,17 +365,18 @@ def _fetch_osm_data_by_tags(segment: BBox, tags: OSMTagMap, class_label_idx: int
         return gpd.GeoDataFrame(columns=["geometry", "class"])
 
 
-def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int) -> bool:
+def _save_rasterized_osm_data(
+    gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, idx: int, other_cls_label: int, binary: bool
+) -> int | None:
     pixel_size_x, pixel_size_y = _calculate_pixel_size(aoi, SEGMENT_SIZE)
     transform = from_origin(west=aoi.west, north=aoi.north, xsize=pixel_size_x, ysize=pixel_size_y)
 
     shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf["class"]))
     burned = rasterize(shapes=shapes, out_shape=SEGMENT_SIZE, transform=transform, fill=other_cls_label, dtype="uint8")
 
-    # FIXME CHECK ONLY IF LABELS ARE NOT BINARY!
-    if (zero_sum := (burned == 0).sum()) > MAX_UNLABELED * burned.size:  # TODO move this check before this function?!
-        print(f"Segment {idx} has too many unlabeled pixels: {(zero_sum / burned.size):.2f}")
-        return False
+    passes, zero_count = _passes_unlabeled_threshold(burned)
+    if passes and not binary:
+        return zero_count / burned.size
 
     with rasterio.open(
         fp=osm_dir / f"{idx}.tif",
@@ -375,7 +390,6 @@ def _save_rasterized_osm_data(gdf: gpd.GeoDataFrame, aoi: BBox, osm_dir: Path, i
         transform=transform,
     ) as f:
         f.write_band(1, burned)
-    return True
 
 
 def _fetch_cnes_land_cover_labels(segment: BBox, sh_config: sh.SHConfig, time_interval: tuple[str, str]) -> npt.NDArray:
@@ -406,10 +420,14 @@ def _save_cnes_labels(data: npt.NDArray, aoi: BBox, idx: int, cnes_dir: Path) ->
         width=SEGMENT_SIZE[1],
         count=1,
         dtype="uint8",
-        crs='EPSG:4326', #TODO remove
+        crs=str(CRS),
         transform=transform,
     ) as f:
         f.write_band(1, data)
+
+
+def _passes_unlabeled_threshold(data: npt.NDArray) -> tuple[bool, int]:
+    return (zero_count := (data == 0).sum()) > MAX_UNLABELED * data.size, zero_count
 
 
 def _visualize_segment_bbox() -> None:
@@ -419,6 +437,7 @@ def _visualize_segment_bbox() -> None:
 
     aoi = AOIs["at"]
     segments = calculate_segments(aoi, SEGMENT_LENGTH_KM)
+    print(f"num segments: {len(segments)}")
     boxes = [shapely.geometry.box(minx=seg.west, maxx=seg.east, miny=seg.south, maxy=seg.north) for seg in segments]
     segments_gdf = gpd.GeoDataFrame(geometry=boxes)
     segments_gdf.set_crs(str(CRS), inplace=True)
