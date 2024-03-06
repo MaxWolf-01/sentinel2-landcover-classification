@@ -68,7 +68,7 @@ DATA_COLLECTION = sh.DataCollection.SENTINEL2_L2A  # use atmosphericlly correcte
 # https://github.com/NASA-IMPACT/hls-foundation-os/issues/15#issuecomment-1667699259
 BANDS: list[str] = ["B02", "B03", "B04", "B8A", "B11", "B12"]
 CRS: sh.CRS = sh.CRS.WGS84  # == "4326" (EPSG)
-TIME_INTERVAL: tuple[str, str] = ("2018-01-01", "2019-12-31")
+TIME_INTERVAL: tuple[str, str] = ("2020-01-01", "2021-01-01")  # one year of latest cnes (can make more recent for osm)
 SEGMENT_SIZE: tuple[int, int] = (512, 512)  # width and height of a single segment in pixels
 SEGMENT_LENGTH_KM: float = 5.12  # 512*10m = 5.12km; 10m = lowest sentinel resolution
 MAX_CLOUD_COVER: float = 0.05
