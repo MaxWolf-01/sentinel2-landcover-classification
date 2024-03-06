@@ -115,4 +115,5 @@ CNES_LABEL_EVALSCRIPT = """
     }
     function evaluatePixel(sample) {
         return [sample.OCS, sample.OCS_Confidence, sample.OCS_Validity];
-    } """
+    }
+"""
