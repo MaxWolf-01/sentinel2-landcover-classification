@@ -59,6 +59,7 @@ AOIs: dict[str, BBox] = {
     "test": BBox(north=48.980217, south=46.845164, east=17.116699, west=13.930664),  # VIE,NÖ,OÖ,NBGLD,Graz
     "at": BBox(north=49.009121, south=46.439861, east=17.523438, west=9.008164),  # AT + bits of neighbours
     "small": BBox(north=48.286391, south=48.195845, east=16.463699, west=16.311951),  # small area in VIE; 6 segments
+    # for cnes data, ensure the bbox is within the cnes boundaries (no sea!), else the 0 index will have double meaning
     "fr": BBox(north=49.2834, south=43.4828, east=5.9551, west=-0.9523),  # rough cut of fr; 12.4k segments
     "fr-lyon": BBox(west=4.508514, south=45.477466, east=5.284424, north=45.897655),  # Lyon in france, 120 segments
     "fr-test": BBox(north=49.549043, south=49.381467, east=0.155069, west=-0.203631),  # 24 segments (many 0, to test)
