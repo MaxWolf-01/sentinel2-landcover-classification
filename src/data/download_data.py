@@ -207,9 +207,6 @@ def _process_segment(
             # TODO validate data with CNES confidence band... in request/evalscript?
             data = _fetch_cnes_land_cover_labels(segment=segment, sh_config=sh_config, time_interval=time_intervals[0])
             data = map_cnes_label_to_simplified_category(labels=data, label_map=label_map)
-            passes, zero_count = _passes_unlabeled_threshold(data)
-            if passes and not binary:
-                return f"Segment {idx} has too many unlabeled pixels: {zero_count / data.size:.2f}"
             _save_cnes_labels(data, aoi=segment, idx=idx, cnes_dir=data_dirs.label)
         else:
             unlabeled_ratio_info: int | None = _save_rasterized_osm_data(
