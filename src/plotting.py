@@ -48,7 +48,7 @@ def plot_images(
         label_map (Optional[ListedColormap]): Color map for images.
         p (Optional[int]): Precision for displaying bbox coordinates.
     """
-    cmap = get_color_map(label_map) if label_map else None
+    cmap = get_color_map(label_map, np.unique(images[0]).tolist()) if label_map else None
     num_images = len(images)
     fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
     for i, (img, title) in enumerate(zip(images, titles)):
@@ -103,20 +103,15 @@ def load_pred_batch_for_plotting(file: Path) -> list[npt.NDArray]:
     return [pred for pred in torch.load(file).argmax(dim=1).cpu().numpy()]  # (B, H, W)
 
 
-def get_color_map(label_map: LabelMap) -> ListedColormap:
+def get_color_map(label_map: LabelMap, class_indices: list[int]) -> ListedColormap:
     """Creates a color map for the given label map
     Args:
         label_map (LabelMap): Label map
-
+        class_indices (list[int]): List of class indices that are present in the mask
     Returns:
         ListedColormap: Color map
     """
-    num_classes = len(label_map)
-    colors = ["" for _ in range(num_classes)]
-    for i, label in enumerate(label_map.values()):
-        colors[i] = label["color"]
-    cmap = ListedColormap(colors)
-    return cmap
+    return ListedColormap([label["color"] for i, label in enumerate(label_map.values()) if i in class_indices])
 
 
 if __name__ == "__main__":
