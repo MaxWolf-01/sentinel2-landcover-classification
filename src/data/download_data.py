@@ -54,6 +54,8 @@ from src.configs.data_config import (
 from src.configs.osm_label_mapping import OSMTagMap
 from src.configs.paths import LOG_DIR, ROOT_DIR
 
+warnings.filterwarnings("error", category=sh.download.sentinelhub_client.SHRateLimitWarning)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
