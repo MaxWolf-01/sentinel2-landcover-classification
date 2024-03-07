@@ -132,7 +132,7 @@ BASE_CONFIG = partial(
     ),
     train=TrainConfig(
         project_name="sentinel-segmentation",
-        lr=1.5e-05,
+        lr=1.5e-06,
         weight_decay=0.05,
         betas=(0.9, 0.999),
         float32_matmul_precision="medium",
