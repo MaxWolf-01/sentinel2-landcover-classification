@@ -302,6 +302,7 @@ def main() -> None:
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
     parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
+    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss. Default: False")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
     parser.add_argument(  # list of tags
@@ -328,17 +329,20 @@ def main() -> None:
 
     script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
-    script_logger.info("Computing class weights...")
-    ds = S2OSMDataset(config.datamodule.dataset_cfg)
-    weights: list[float] = ds.compute_class_weights().tolist()
-    weights = [0] + weights if len(weights) != config.num_classes else weights  # add 0 for background class
-    config.train.loss_class_weights = weights
-    script_logger.info(
-        f"Computed class weights: {weights} for classes: {LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
-    )
+    if args.weighted_loss:
+        script_logger.info("Computing class weights...")
+        ds = S2OSMDataset(config.datamodule.dataset_cfg)
+        weights: list[float] = ds.compute_class_weights(ignore_zero=config.train.masked_loss).tolist()
+        weights = [0] + weights if len(weights) != config.num_classes else weights  # add 0 for background class
+        config.train.loss_class_weights = weights
+        script_logger.info(
+            f"Computed class weights: {weights} for classes: "
+            f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
+        )
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
+        ds = S2OSMDataset(config.datamodule.dataset_cfg)
         dim = (0, 2, 3)  # (0, 1, 3, 4) in case we have time dimension
         calculate_mean_std(ds, dim=dim, save_path=ds.data_dirs.base_path / "mean_std.pt")
 
