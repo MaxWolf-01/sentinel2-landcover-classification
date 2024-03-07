@@ -5,8 +5,7 @@ import numpy as np
 import rasterio
 from matplotlib import pyplot as plt
 
-from configs.data_config import LABEL_MAPS, LabelMap
-from src.configs.paths import DATA_DIR
+from src.configs.data_config import DataDirs, LABEL_MAPS, LabelMap
 from src.data.download_data import AOIs
 
 
@@ -76,10 +75,12 @@ if __name__ == '__main__':
     parser.add_argument("--labels", type=str, default="osm-multiclass", help=f"one of {list(LABEL_MAPS)}. Default: multiclass")
     parser.add_argument("--aoi", type=str, default="at", help=f"one of {list(AOIs)}")
     args = parser.parse_args()
-    osm_dir = DATA_DIR / args.aoi / args.labels / "osm"
-    print("Data path: ", osm_dir)
-    label_counts, label_percentages, other_percentages = calculate_osm_label_distribution_and_percentage(osm_dir)
+    label_dir: Path = DataDirs(aoi=args.aoi, map_type=args.labels).label
+    print("Data path: ", label_dir)
+    label_counts, label_percentages, other_percentages = calculate_osm_label_distribution_and_percentage(label_dir)
     label_map: LabelMap = LABEL_MAPS[args.labels]
+    if len(label_counts) == len(label_map) - 1:
+        label_map.pop("other")
     label_counts: dict[str, float] = {name: value for name, value in zip(label_map, label_counts.values())}
     label_percentages = {name: value for name, value in zip(label_map, label_percentages.values())}
     plot_other_distribution(other_percentages)
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     # Calculate and print the percentage and counts
     files_with_less_than_5_percent_other = [p for p in other_percentages if p < 5]
     percent_with_less_than_5_percent_other = (len(files_with_less_than_5_percent_other) / len(
-        list(osm_dir.glob("*.tif"))
+        list(label_dir.glob("*.tif"))
     )) * 100
     print(f"Percentage of data with less than 5% 'Other': {percent_with_less_than_5_percent_other:.2f}%")
     print(f"Count of files (before): {len(other_percentages)}")
