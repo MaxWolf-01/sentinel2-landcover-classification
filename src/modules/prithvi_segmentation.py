@@ -4,8 +4,8 @@ import einops
 import torch
 from torch import nn
 
-from modules.prithvi import MaskedAutoencoderViT
-from utils import load_prithvi
+from src.modules.prithvi import MaskedAutoencoderViT
+from src.utils import load_prithvi
 
 
 class Norm2d(nn.Module):

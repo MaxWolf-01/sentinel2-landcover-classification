@@ -24,17 +24,17 @@ from torchmetrics import Accuracy, JaccardIndex as IoU
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 import configs.segmentation as cfg
-from configs.data_config import LABEL_MAPS, LabelMap
-from configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
-from configs.segmentation import Config
-from data.calculate_dataset_statistics import calculate_mean_std
-from data.download_data import AOIs
-from data.s2osm_datamodule import S2OSMDatamodule
-from data.s2osm_dataset import S2OSMDataset, S2OSMSample
-from losses import Loss, LossType, get_loss
-from lr_schedulers import LRSchedulerType, get_lr_scheduler
-from plotting import load_sentinel_tiff_for_plotting
-from utils import get_logger, get_unique_run_name
+from src.configs.data_config import LABEL_MAPS, LabelMap
+from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
+from src.configs.segmentation import Config
+from src.data.calculate_dataset_statistics import calculate_mean_std
+from src.data.download_data import AOIs
+from src.data.s2osm_datamodule import S2OSMDatamodule
+from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
+from src.losses import Loss, LossType, get_loss
+from src.lr_schedulers import LRSchedulerType, get_lr_scheduler
+from src.plotting import load_sentinel_tiff_for_plotting
+from src.utils import get_logger, get_unique_run_name
 
 script_logger = get_logger(__name__)
 
@@ -68,12 +68,12 @@ class SegmentationModule(pl.LightningModule):
         }
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-    #        self.net: nn.Module = torch.compile(  # type: ignore
-    #            model=self.net,
-    #            mode=config.train.compile_mode,
-    #            fullgraph=config.train.compile_fullgraph,
-    #            disable=config.train.compile_disable,
-    #        )
+        self.net: nn.Module = torch.compile(  # type: ignore
+            model=self.net,
+            mode=config.train.compile_mode,
+            fullgraph=config.train.compile_fullgraph,
+            disable=config.train.compile_disable,
+        )
 
     def on_fit_start(self) -> None:
         if isinstance(self.logger, WandbLogger):
