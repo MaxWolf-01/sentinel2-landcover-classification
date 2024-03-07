@@ -8,12 +8,12 @@ from functools import partial
 
 from torch import nn
 
+from data.s2osm_datamodule import S2OSMDatamoduleConfig
+from data.s2osm_dataset import S2OSMDatasetConfig
 from losses import LossType
 from lr_schedulers import LRSchedulerType
 from modules.efficientnet_unet import EfficientNetConfig, EfficientnetUnet
 from modules.prithvi_segmentation import PrithviSegmentationNet, PrithviSegmentationNetConfig
-from data.s2osm_datamodule import S2OSMDatamoduleConfig
-from data.s2osm_dataset import S2OSMDatasetConfig
 
 ModelConfig = PrithviSegmentationNetConfig | EfficientNetConfig
 
@@ -100,7 +100,7 @@ class TrainConfig:
     seed: int = 42
 
     # loss_type specific
-    loss_class_weights: list[float] | None = None
+    loss_class_weights: list[float] | None = None  # set dynamically from dataset
     label_smoothing: float = 0.0
     focal_loss_gamma: float | None = None
     dice_eps: float | None = None
@@ -147,8 +147,6 @@ BASE_CONFIG = partial(
         use_wandb_logger=True,
         masked_loss=True,
         loss_type=LossType.CE,
-        # [0, 0.35, 0.1, 0.55],  # _, agriculture, nature, sealed soil; TODO set *actual* (1-frquency)?
-        loss_class_weights=None,
         focal_loss_gamma=2,
         dice_focal_dice_weight=0.5,
         dice_focal_focal_weight=0.5,

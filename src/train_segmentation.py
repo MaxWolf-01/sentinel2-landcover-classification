@@ -25,15 +25,15 @@ from torchmetrics.classification import MulticlassConfusionMatrix
 
 import configs.segmentation as cfg
 from configs.data_config import LABEL_MAPS, LabelMap
-from data.download_data import AOIs
-from losses import Loss, LossType, get_loss
-from lr_schedulers import LRSchedulerType, get_lr_scheduler
-from plotting import load_sentinel_tiff_for_plotting
 from configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from configs.segmentation import Config
 from data.calculate_dataset_statistics import calculate_mean_std
+from data.download_data import AOIs
 from data.s2osm_datamodule import S2OSMDatamodule
 from data.s2osm_dataset import S2OSMDataset, S2OSMSample
+from losses import Loss, LossType, get_loss
+from lr_schedulers import LRSchedulerType, get_lr_scheduler
+from plotting import load_sentinel_tiff_for_plotting
 from utils import get_logger, get_unique_run_name
 
 script_logger = get_logger(__name__)
@@ -50,9 +50,7 @@ class SegmentationModule(pl.LightningModule):
         self.loss_fn: Loss = get_loss(config)
         label_map: LabelMap = LABEL_MAPS[config.datamodule.dataset_cfg.label_map]
         self.class_labels: dict[int, str] = {i: label for i, label in enumerate(label_map)}
-        task: Literal["binary", "multiclass"] = (
-            "binary" if "binary" in config.datamodule.dataset_cfg.label_map else "multiclass"
-        )
+        task: Literal["binary", "multiclass"] = "binary" if self.config.num_classes == 2 else "multiclass"
         metrics = lambda: {  # noqa: E731
             "confusion_matrix": MulticlassConfusionMatrix(
                 num_classes=config.num_classes,
@@ -70,12 +68,12 @@ class SegmentationModule(pl.LightningModule):
         }
         torch.set_float32_matmul_precision(self.config.train.float32_matmul_precision)
 
-#        self.net: nn.Module = torch.compile(  # type: ignore
-#            model=self.net,
-#            mode=config.train.compile_mode,
-#            fullgraph=config.train.compile_fullgraph,
-#            disable=config.train.compile_disable,
-#        )
+    #        self.net: nn.Module = torch.compile(  # type: ignore
+    #            model=self.net,
+    #            mode=config.train.compile_mode,
+    #            fullgraph=config.train.compile_fullgraph,
+    #            disable=config.train.compile_disable,
+    #        )
 
     def on_fit_start(self) -> None:
         if isinstance(self.logger, WandbLogger):
@@ -295,14 +293,14 @@ def objective(trial: optuna.Trial) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help=f"Model type. One of: {list(cfg.ModelName)}")
-    parser.add_argument("--labels", type=str, default=None, help=f"one of {list(LABEL_MAPS)}.")
+    parser.add_argument("--labels", type=str, required=True, help=f"one of {list(LABEL_MAPS)}.")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--loss-type", type=str, default=None, help=f"Available: {list(LossType)}")
     parser.add_argument("--lr-scheduler", type=str, default=None, help=f"Available: {list(LRSchedulerType)}")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs. -1 = infinite")
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
-    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
@@ -330,11 +328,19 @@ def main() -> None:
 
     script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
+    script_logger.info("Computing class weights...")
+    ds = S2OSMDataset(config.datamodule.dataset_cfg)
+    weights: list[float] = ds.compute_class_weights().tolist()
+    weights = [0] + weights if len(weights) != config.num_classes else weights  # add 0 for background class
+    config.train.loss_class_weights = weights
+    script_logger.info(
+        f"Computed class weights: {weights} for classes: {LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
+    )
+
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
-        dataset = S2OSMDataset(config.datamodule.dataset_cfg)
         dim = (0, 2, 3)  # (0, 1, 3, 4) in case we have time dimension
-        calculate_mean_std(dataset, dim=dim, save_path=dataset.data_dirs.base_path / "mean_std.pt")
+        calculate_mean_std(ds, dim=dim, save_path=ds.data_dirs.base_path / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if args.type == "tune":
