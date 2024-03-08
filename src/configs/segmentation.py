@@ -111,8 +111,12 @@ class TrainConfig:
     lr_scheduler_type: LRSchedulerType | None = None
     step_lr_sched_step_size: int | None = None
     step_lr_sched_gamma: float | None = None
-    cosine_warm_restarts_T_0: int | None = None
-    cosine_warm_restarts_eta_min: float | None = None
+    cosine_lr_sched_first_cycle_steps: int | None = None
+    cosine_lr_sched_cycle_mult: float | None = None
+    cosine_lr_sched_max_lr: float | None = None
+    cosine_lr_sched_min_lr: float | None = None
+    cosine_lr_sched_warmup_steps: int | None = None
+    cosine_lr_sched_gamma: float | None = None
 
 
 # TODO these are still initial / example values (including model configs etc.)
