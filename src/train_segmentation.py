@@ -34,7 +34,7 @@ from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
 from src.losses import Loss, LossType, get_loss
 from src.lr_schedulers import LRSchedulerType, get_lr_scheduler
 from src.plotting import load_sentinel_tiff_for_plotting
-from src.utils import get_logger, get_unique_run_name
+from src.utils import get_class_probabilities, get_logger, get_unique_run_name
 
 script_logger = get_logger(__name__)
 
@@ -348,7 +348,7 @@ def main() -> None:
     if args.weighted_loss:
         script_logger.info("Computing class weights...")
         ds = S2OSMDataset(config.datamodule.dataset_cfg)
-        weights: list[float] = ds.compute_class_weights(ignore_zero=config.train.masked_loss).tolist()
+        weights: list[float] = get_class_probabilities(dataset=ds, ignore_label=0).tolist()
         weights = [0] + weights if len(weights) != config.num_classes else weights  # add 0 for background class
         config.train.loss_class_weights = weights
         script_logger.info(

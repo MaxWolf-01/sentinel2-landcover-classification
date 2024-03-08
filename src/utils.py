@@ -146,3 +146,19 @@ def train_val_test_split(
     if deepcopy:
         train, val, test = copy.deepcopy(train), copy.deepcopy(val), copy.deepcopy(test)
     return train, val, test
+
+
+def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_label: int = -1) -> torch.Tensor:
+    """Calculate dataset class frequency as probabilities. Uses random sample if the dataset is large.
+    Args:
+        dataset (torch.utils.data.Dataset): dataset to calculate class probabilities for.
+        ignore_label (int): class label to ignore when calculating class frequencies.
+    Returns:
+        class_weights (torch.Tensor): class weights to be used in the loss function, sorted by class index.
+    """
+    sample_labels = torch.cat([dataset[i][1] for i in random.sample(range(len(dataset)), k=min(2500, len(dataset)))])
+    unique, counts = torch.unique(sample_labels, return_counts=True, sorted=True)  # (C,), (C,)
+    if ignore_label != -1:
+        counts = counts[unique != ignore_label]  # (C-1,)
+    class_weights = counts / counts.sum()
+    return class_weights
