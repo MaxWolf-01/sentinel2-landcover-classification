@@ -302,6 +302,7 @@ def main() -> None:
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
     parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
+    parser.add_argument("--focal-loss-gamma", type=float, default=None)
     parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss. Default: False")
     parser.add_argument("--cosine-lr-sched-first-cycle-steps", type=int, default=None)
     parser.add_argument("--cosine-lr-sched-cycle-mult", type=float, default=None)
@@ -333,6 +334,7 @@ def main() -> None:
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     dotenv.load_dotenv()
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+    config.train.focal_loss_gamma = args.focal_loss_gamma or config.train.focal_loss_gamma
     config.train.lr_scheduler_type = args.lr_scheduler or config.train.lr_scheduler_type
     config.train.cosine_lr_sched_first_cycle_steps = args.cosine_lr_sched_first_cycle_steps
     config.train.cosine_lr_sched_cycle_mult = args.cosine_lr_sched_cycle_mult
