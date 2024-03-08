@@ -66,7 +66,7 @@ class S2OSMDataset(Dataset):
         osm_tensor = torch.from_numpy(osm_data).long()
         return S2OSMSample(x=sentinel_tensor, y=osm_tensor)
 
-    def compute_class_weights(self) -> torch.Tensor:
+    def compute_class_weights(self, ignore_zero: bool) -> torch.Tensor:
         """Computes class weights inversely proportional to class frequencies in the dataset. Uses random sample if the
         dataset is large.
         Returns:
@@ -74,6 +74,8 @@ class S2OSMDataset(Dataset):
         """
         sample_labels = torch.cat([self[i][1] for i in random.sample(range(len(self)), k=min(2500, len(self)))])
         unique, counts = torch.unique(sample_labels, return_counts=True)
+        if ignore_zero:
+            unique, counts = unique[unique != 0], counts[unique != 0]
         class_weights = counts.sum() / (len(unique) * counts)
         return class_weights
 
