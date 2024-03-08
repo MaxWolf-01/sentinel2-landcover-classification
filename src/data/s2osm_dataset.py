@@ -76,7 +76,8 @@ class S2OSMDataset(Dataset):
         unique, counts = torch.unique(sample_labels, return_counts=True)
         if ignore_zero:
             unique, counts = unique[unique != 0], counts[unique != 0]
-        class_weights = counts.sum() / (len(unique) * counts)
+        # class_weights = counts.sum() / (len(unique) * counts)
+        class_weights = 1 / counts
         return class_weights
 
 
