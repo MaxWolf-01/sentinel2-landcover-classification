@@ -10,6 +10,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from torch import nn
 
 from src.configs.paths import CONFIG_DIR, LOG_DIR, PRE_TRAINED_WEIGHTS_DIR
 from src.modules.prithvi import MaskedAutoencoderViT
@@ -162,3 +163,20 @@ def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_label: int
         counts = counts[unique != ignore_label]  # (C-1,)
     class_weights = counts / counts.sum()
     return class_weights
+
+
+def initialize_classification_layer_bias(layer: nn.Linear | nn.Conv2d, class_distribution: list[float]) -> None:
+    """Initialize the bias of the classification layer to reflect the class distribution.
+    Args:
+        layer (nn.Linear | nn.Conv2d): classification layer to initialize.
+        class_distribution (list[float]): class distribution to initialize the bias with.
+    """
+    distribution = torch.tensor(class_distribution, dtype=torch.float32)
+    assert torch.isclose(
+        distribution.sum(), torch.tensor(1.0)
+    ), f"Must sum to 1, got distribution: {class_distribution}"
+    assert len(class_distribution) > 1, "Class distribution must have at least 2 classes"
+    if len(distribution) == 2:
+        layer.bias.data.fill_((distribution[1] / distribution[0]).log())  # positive/negative class
+    else:
+        layer.bias.data = distribution.log()

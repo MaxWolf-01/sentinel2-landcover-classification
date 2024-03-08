@@ -61,7 +61,9 @@ class Config:
             ModelName.EFFICIENTNET_UNET_B7: (EFFICIENTNET_UNET_B7, EfficientnetUnet),
         }
         model_config_partial, instantiator = name_to_model_mapping[self.model_name]
-        self.model = model_config_partial(num_classes=self.num_classes)
+        self.model = model_config_partial(
+            num_classes=self.num_classes, class_distribution=self.train.class_distribution
+        )
         return instantiator(self.model)
 
 
@@ -77,6 +79,7 @@ class TrainConfig:
     # loss
     loss_type: LossType
     masked_loss: bool
+    weighted_loss: bool
 
     # compile
     compile_mode: str
@@ -99,8 +102,9 @@ class TrainConfig:
 
     seed: int = 42
 
+    class_distribution: list[float] | None = None  # set dynamically from dataset
+
     # loss_type specific
-    loss_class_weights: list[float] | None = None  # set dynamically from dataset
     label_smoothing: float = 0.0
     focal_loss_gamma: float | None = None
     dice_eps: float | None = None
@@ -123,7 +127,7 @@ class TrainConfig:
 BASE_CONFIG = partial(
     Config,
     datamodule=S2OSMDatamoduleConfig(
-        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="osm-multiclass"),
+        dataset_cfg=S2OSMDatasetConfig(aoi="fr", label_map="cnes-multiclass"),
         batch_size=32,
         num_workers=1,
         pin_memory=True,
@@ -149,11 +153,9 @@ BASE_CONFIG = partial(
         precision="bf16",
         overfit_batches=0.0,
         use_wandb_logger=True,
-        masked_loss=True,
         loss_type=LossType.CE,
-        focal_loss_gamma=2,
-        dice_focal_dice_weight=0.5,
-        dice_focal_focal_weight=0.5,
+        masked_loss=True,
+        weighted_loss=True,
         # lr scheduler
         lr_scheduler_type=None,
     ),

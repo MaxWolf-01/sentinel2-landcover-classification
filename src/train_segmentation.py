@@ -334,6 +334,7 @@ def main() -> None:
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     dotenv.load_dotenv()
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+    config.train.weighted_loss = args.weighted_loss or config.train.weighted_loss
     config.train.focal_loss_gamma = args.focal_loss_gamma or config.train.focal_loss_gamma
     config.train.lr_scheduler_type = args.lr_scheduler or config.train.lr_scheduler_type
     config.train.cosine_lr_sched_first_cycle_steps = args.cosine_lr_sched_first_cycle_steps
@@ -345,20 +346,19 @@ def main() -> None:
 
     script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
-    if args.weighted_loss:
-        script_logger.info("Computing class weights...")
-        ds = S2OSMDataset(config.datamodule.dataset_cfg)
-        weights: list[float] = get_class_probabilities(dataset=ds, ignore_label=0).tolist()
-        weights = [0] + weights if len(weights) != config.num_classes else weights  # add 0 for background class
-        config.train.loss_class_weights = weights
-        script_logger.info(
-            f"Computed class weights: {weights} for classes: "
-            f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
-        )
+    ds = S2OSMDataset(config.datamodule.dataset_cfg)
+    script_logger.info("Computing class weights...")
+    class_distribution: list[float] = get_class_probabilities(dataset=ds, ignore_label=0).tolist()
+    if len(class_distribution) != config.num_classes:  # add 0 for background class
+        class_distribution = [0] + class_distribution
+    config.train.class_distribution = class_distribution
+    script_logger.info(
+        f"Computed class weights: {class_distribution} for classes: "
+        f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
+    )
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
-        ds = S2OSMDataset(config.datamodule.dataset_cfg)
         dim = (0, 2, 3)  # (0, 1, 3, 4) in case we have time dimension
         calculate_mean_std(ds, dim=dim, save_path=ds.data_dirs.base_path / "mean_std.pt")
 

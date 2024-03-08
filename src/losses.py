@@ -18,7 +18,7 @@ class LossType(str, enum.Enum):
 
 # TODO write binary verisions!
 def get_loss(config) -> Loss:
-    class_weights = torch.tensor(config.train.loss_class_weights) if config.train.loss_class_weights else None
+    class_weights = torch.tensor(config.train.class_distribution) if config.train.weighted_loss else None
     assert (
         class_weights is None or len(class_weights) == config.num_classes
     ), f"{len(class_weights)}!={config.num_classes}"
