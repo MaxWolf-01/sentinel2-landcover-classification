@@ -31,7 +31,7 @@ def get_loss(config) -> Loss:
             )
         case LossType.FOCAL:
             return FocalLoss(
-                alpha=class_weights or torch.tensor([1.0] * config.num_classes),
+                alpha=class_weights if class_weights is not None else torch.tensor([1.0] * config.num_classes),
                 gamma=config.train.focal_loss_gamma,
                 label_smoothing=config.train.label_smoothing,
                 ignore_index=0 if config.train.masked_loss else -100,
@@ -44,7 +44,7 @@ def get_loss(config) -> Loss:
                 l2_weight=config.train.dice_focal_focal_weight,
                 l1=DiceLoss(eps=config.train.dice_eps),
                 l2=FocalLoss(
-                    alpha=class_weights or torch.tensor([1.0] * config.num_classes),
+                    alpha=class_weights if class_weights is not None else torch.tensor([1.0] * config.num_classes),
                     gamma=config.train.focal_loss_gamma,
                     label_smoothing=config.train.label_smoothing,
                     ignore_index=0 if config.train.masked_loss else -100,

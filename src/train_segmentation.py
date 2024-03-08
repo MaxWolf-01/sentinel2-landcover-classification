@@ -318,6 +318,7 @@ def main() -> None:
     config.model_name = args.model or config.model_name
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.loss_type = args.loss_type or config.train.loss_type
     config.train.max_epochs = args.epochs or config.train.max_epochs
     config.train.log_interval = args.log_interval or config.train.log_interval
     config.train.compile_disable = args.no_compile or config.train.compile_disable
