@@ -171,7 +171,7 @@ def initialize_classification_layer_bias(layer: nn.Linear | nn.Conv2d, class_dis
         layer (nn.Linear | nn.Conv2d): classification layer to initialize.
         class_distribution (list[float]): class distribution to initialize the bias with.
     """
-    distribution = torch.tensor(class_distribution, dtype=torch.float32)
+    distribution = torch.tensor(class_distribution, dtype=torch.float32) + 1e-6  # small eps to avoid log(0) & div by 0
     assert torch.isclose(
         distribution.sum(), torch.tensor(1.0)
     ), f"Must sum to 1, got distribution: {class_distribution}"
