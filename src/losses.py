@@ -67,16 +67,18 @@ class FocalLoss:
 
     def __call__(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         # https://discuss.pytorch.org/t/focal-loss-for-imbalanced-multi-class-classification-in-pytorch/61289
-        ce_loss = F.cross_entropy(
+        ce_loss = F.cross_entropy(  # -alpha * log(p_t)
             y_hat,
             y,
             label_smoothing=self.label_smoothing,
             ignore_index=self.ignore_index,
+            weight=self.alpha.to(
+                y.device
+            ),  # TODO make a test run between this, the other method, weighted CE as baseline and unweighted Focal loss
             reduction="none",  # keep per-batch-item loss
         )
         pt = torch.exp(-ce_loss)  # log likelihood to likelihood (probabilities), [0,1]
-        alpha = self.alpha.to(y.device).gather(0, y.view(-1)).view(*y.shape)  # map class to alpha
-        focal_loss = alpha * (1 - pt) ** self.gamma * ce_loss
+        focal_loss = (1 - pt) ** self.gamma * ce_loss
         return _reduce(focal_loss, self.reduce_type)
 
 
