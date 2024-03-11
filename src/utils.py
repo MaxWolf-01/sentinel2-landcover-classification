@@ -202,7 +202,7 @@ def get_sample_weights(
     sample_weights = []
     for i in range(len(dataset)):
         _, label = dataset[i]
-        local_class_distribution = torch.bincount(label.flatten(), minlength=num_classes).float()
+        local_class_distribution = torch.bincount(label.flatten(), minlength=num_classes).float()[mask]
         local_class_distribution /= local_class_distribution.sum()
 
         # high class deviation from global norm -> high sample weight
