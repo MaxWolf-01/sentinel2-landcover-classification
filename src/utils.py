@@ -181,3 +181,35 @@ def initialize_classification_layer_bias(layer: nn.Linear | nn.Conv2d, class_dis
         layer.bias.data.fill_((distribution[1] / distribution[0]).log())  # positive/negative class
     else:
         layer.bias.data = distribution.log()
+
+
+def get_sample_weights(
+    dataset: torch.utils.data.Dataset, class_distribution: list[float], ignore_index: int
+) -> torch.Tensor:
+    """Calculate sample weights based on global class distribution.
+    Args:
+        dataset (torch.utils.data.Dataset): dataset to calculate sample weights for.
+        class_distribution (list[float]): overall dataset class distribution to calculate sample weights from.
+        ignore_index (int): class label to ignore when calculating sample weights.
+    Returns:
+        sample_weights (torch.Tensor): weights for each sample in the dataset.
+    """
+    # TODO verify correct handle ignore idx
+    global_class_distribution = torch.tensor(class_distribution, dtype=torch.float32)
+    mask = global_class_distribution != ignore_index
+    global_class_distribution = global_class_distribution[mask]
+    num_classes = len(global_class_distribution)
+    sample_weights = []
+    for i in range(len(dataset)):
+        _, label = dataset[i]
+        local_class_distribution = torch.bincount(label.flatten(), minlength=num_classes).float()
+        local_class_distribution /= local_class_distribution.sum()
+
+        # high class deviation from global norm -> high sample weight
+        class_deviation = (local_class_distribution - global_class_distribution).abs()
+        sample_weight = class_deviation.sum() / num_classes
+
+        sample_weights.append(sample_weight)
+    sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
+    sample_weights /= sample_weights.sum()  # Normalize sample weights
+    return sample_weights  # TODO visualize
