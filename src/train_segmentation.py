@@ -303,7 +303,8 @@ def main() -> None:
     parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--focal-loss-gamma", type=float, default=None)
-    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss. Default: False")
+    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss.")
+    parser.add_argument("--weighted-sampling", action="store_true", help="Use class-frequency based sampling")
     parser.add_argument("--cosine-lr-sched-first-cycle-steps", type=int, default=None)
     parser.add_argument("--cosine-lr-sched-cycle-mult", type=float, default=None)
     parser.add_argument("--cosine-lr-sched-max-lr", type=float, default=None)
@@ -356,6 +357,8 @@ def main() -> None:
         f"Computed class weights: {class_distribution} for classes: "
         f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
     )
+    if args.weighted_sampling:
+        config.datamodule.class_distribution = class_distribution
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
