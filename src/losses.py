@@ -5,6 +5,9 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 from torch import nn
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 Loss = typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
@@ -18,7 +21,11 @@ class LossType(str, enum.Enum):
 
 # TODO write binary verisions!
 def get_loss(config) -> Loss:
-    class_weights = torch.tensor(config.train.class_distribution) if config.train.weighted_loss else None
+    if config.train.weighted_loss:
+        class_weights = torch.tensor(config.train.class_distribution)
+        skip_first = int(config.train.masked_loss)
+        class_weights[skip_first:] = 1 - class_weights[skip_first:]
+        logger.info(f"Calculated loss class weights {class_weights}")
     assert (
         class_weights is None or len(class_weights) == config.num_classes
     ), f"{len(class_weights)}!={config.num_classes}"

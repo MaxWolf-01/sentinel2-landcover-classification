@@ -161,6 +161,7 @@ def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_label: int
     unique, counts = torch.unique(sample_labels, return_counts=True, sorted=True)  # (C,), (C,)
     if ignore_label != -1:
         counts = counts[unique != ignore_label]  # (C-1,)
+    assert all(counts) > 0, counts
     class_weights = counts / counts.sum()
     return class_weights
 
