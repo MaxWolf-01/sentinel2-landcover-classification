@@ -5,8 +5,7 @@ import numpy as np
 import rasterio
 from matplotlib import pyplot as plt
 
-from src.configs.data_config import DataDirs, LABEL_MAPS, LabelMap
-from src.data.download_data import AOIs
+from src.configs.data_config import AOIs, DataDirs, LABEL_MAPS, LabelMap
 
 
 def calculate_osm_label_distribution_and_percentage(osm_dir: Path) -> tuple[
@@ -72,7 +71,9 @@ def plot_detailed_other_distribution(other_percentages: list[float], step: float
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--labels", type=str, default="osm-multiclass", help=f"one of {list(LABEL_MAPS)}. Default: multiclass")
+    parser.add_argument(
+        "--labels", type=str, default="osm-multiclass", help=f"one of {list(LABEL_MAPS)}. Default: multiclass"
+        )
     parser.add_argument("--aoi", type=str, default="at", help=f"one of {list(AOIs)}")
     args = parser.parse_args()
     label_dir: Path = DataDirs(aoi=args.aoi, map_type=args.labels).label

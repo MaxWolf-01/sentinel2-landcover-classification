@@ -40,6 +40,8 @@ class DataDirs:
     def __init__(self, aoi: str, map_type: str) -> None:
         self.base_path: Path = DATA_DIR / aoi
         self.sentinel: Path = self.base_path / "sentinel"
+        if "cnes" in map_type:  # for simplified cnes, we compute the new labels dynamically
+            map_type = "cnes-full"
         self.label: Path = self.base_path / "label" / map_type
 
     @property

@@ -24,11 +24,10 @@ from torchmetrics import Accuracy, JaccardIndex as IoU
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 import configs.segmentation as cfg
-from src.configs.data_config import LABEL_MAPS, LabelMap
+from src.configs.data_config import AOIs, LABEL_MAPS, LabelMap
 from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from src.configs.segmentation import Config
 from src.data.calculate_dataset_statistics import calculate_mean_std
-from src.data.download_data import AOIs
 from src.data.s2osm_datamodule import S2OSMDatamodule
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
 from src.losses import Loss, LossType, get_loss

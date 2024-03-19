@@ -9,7 +9,8 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.configs.data_config import DataDirs
+from src.configs.cnes_labell_mappings import get_cnes_transform
+from src.configs.data_config import DataDirs, LABEL_MAPS
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +39,9 @@ class S2OSMDataset(Dataset):
         self.data_dirs = DataDirs(aoi=cfg.aoi, map_type=cfg.label_map)
         self.sentinel_files: dict[int, Path] = self.data_dirs.sentinel_files
         self.osm_files: dict[int, Path] = self.data_dirs.osm_files
+        self.cnes_transform: typing.Callable[[npt.NDArray], npt.NDArray] = get_cnes_transform(
+            cfg.label_map, LABEL_MAPS[cfg.label_map]
+        )
         assert len(self) > 0, "No data found. Did you run `download_s2_osm_data.py`?"
         logger.info(f"Initialized {self} with {len(self)} samples.")
 
@@ -50,6 +54,7 @@ class S2OSMDataset(Dataset):
         osm_idx = get_mask_file_idx(self.sentinel_files[idx])
         with rasterio.open(self.osm_files[osm_idx]) as f:
             osm_data: npt.NDArray = f.read(1)  # read first band
+        osm_data = self.cnes_transform(osm_data)
 
         if self.transform is not None:
             sentinel_data = einops.rearrange(sentinel_data, "c h w -> h w c")  # albumentations uses chan last
