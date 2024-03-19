@@ -10,15 +10,17 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
-from configs.data_config import LABEL_MAPS, LabelMap
-from data.download_data import AOIs, BBox, DataDirs
-from data.s2osm_dataset import get_mask_file_idx
+from src.configs.cnes_labell_mappings import get_cnes_transform
+from src.configs.data_config import LABEL_MAPS, LabelMap
+from src.data.download_sentinel import AOIs, BBox, DataDirs
+from src.data.s2osm_dataset import get_mask_file_idx
 
 
-def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, p: int | None = None) -> None:
+def plot_sentinel_and_mask(sentinel: Path, mask: Path, label_map: LabelMap, transform, p: int | None = None) -> None:
     """Plots Sentinel image and mask side by side."""
     sentinel_img, sentinel_bbox = load_sentinel_tiff_for_plotting(sentinel, return_bbox=True)
     mask_img = load_mask_tiff_for_plotting(mask)
+    mask_img = transform(mask_img)
     plot_images([mask_img, sentinel_img], ["Mask", "Sentinel Image"], sentinel_bbox, label_map, p)
 
 
@@ -53,11 +55,19 @@ def plot_images(
     fig, ax = plt.subplots(1, num_images, figsize=(6 * num_images, 6))
     for i, (img, title) in enumerate(zip(images, titles)):
         ax[i].imshow(img, cmap=cmap)
-        ax[i].set_title(title)
+        ax[i].set_title(title, fontsize=35, fontweight="bold")
         ax[i].axis("off")
     if label_map:
         legend_elements = [Patch(facecolor=label_map[label]["color"], label=label) for label in label_map]
-        plt.legend(handles=legend_elements, loc="upper center", bbox_to_anchor=(-0.15, -0.05), ncol=len(label_map))
+        ax[0].legend(
+            handles=legend_elements,
+            loc="upper center",
+            bbox_to_anchor=(1, -0.05),
+            ncol=min(len(legend_elements), 4),
+            fancybox=True,
+            shadow=True,
+            prop={"size": 25},
+        )
     if bbox:
         fig.suptitle(f"BBOX: {bbox.__str__(p=p)}", fontsize=14, y=0.95)
 
@@ -116,10 +126,8 @@ def get_color_map(label_map: LabelMap, class_indices: list[int]) -> ListedColorm
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi", type=str, default="at", help=f"Default: VIE. Available: {list(AOIs)}")
-    parser.add_argument(
-        "--labels", type=str, default="osm-multiclass", help=f"Default: Multiclass. Available:{list(LABEL_MAPS)}"
-    )
+    parser.add_argument("aoi", type=str, default="at", help=f"Available: {list(AOIs)}")
+    parser.add_argument("labels", type=str, default="osm-multiclass", help=f"Available:{list(LABEL_MAPS)}")
     parser.add_argument("--n", type=int, default=0, help="sentinel image index of the downloaded data")
     parser.add_argument("--p", type=int, default=6, help="precision for displaying bbox coordinates")
     parser.add_argument(
@@ -135,8 +143,9 @@ if __name__ == "__main__":
     get_sentinel_file_from_mask = (  # noqa: E731
         lambda osm_i: next(f for f in sentinel_files.values() if get_mask_file_idx(f) == int(mask_files[osm_i].stem))
     )
+    cnes_transform = get_cnes_transform(args.labels, LABEL_MAPS[args.labels])
 
-    index = args.n
+    index = args.n or list(mask_files.keys())[0]
     max_index = len(sentinel_files)
     print("Press...\nn: next\nb: back\nN: next and close\nB: back and close\n{index} to jump\nq: quit")
     while True:
@@ -150,7 +159,9 @@ if __name__ == "__main__":
             assert int(osm_file.stem) == index, f"{osm_file.stem} != {index}"
         assert sentinel_file.stem.split("_")[0] == osm_file.stem, f"{sentinel_file.stem} != {osm_file.stem}"
         print("Showing:", "/".join(sentinel_file.parts[-4:]), "/".join(osm_file.parts[-4:]))
-        plot_sentinel_and_mask(sentinel=sentinel_file, mask=osm_file, label_map=LABEL_MAPS[args.labels], p=args.p)
+        plot_sentinel_and_mask(
+            sentinel=sentinel_file, mask=osm_file, label_map=LABEL_MAPS[args.labels], p=args.p, transform=cnes_transform
+        )
         plt.show(block=False)
         user_input = input("Input:")
         if user_input in "nN":

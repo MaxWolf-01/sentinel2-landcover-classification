@@ -1,4 +1,5 @@
 import typing
+from functools import partial
 
 import numpy as np
 
@@ -73,17 +74,22 @@ CNES_TO_SIMPLIFIED: dict[int, str] = {
 }
 
 
-def map_cnes_label_to_simplified_category(labels: np.ndarray, label_map: CnesLabelMap) -> np.ndarray:
-    if label_map == CNES_LABEL_MAP:
-        return labels[0]
+def get_cnes_transform(label_map_name: str, label_map: CnesLabelMap) -> typing.Callable[[np.ndarray], np.ndarray]:
+    return (
+        partial(_cnes_transform, label_map=label_map)
+        if "cnes" in label_map_name and label_map_name != "cnes-full"
+        else lambda x: x
+    )
 
-    first_dimension_labels = labels[:, :, 0]  # TODO: Change if using multiple dimensions of CNES
-    label_keys: list[str] = list(label_map.keys())
 
-    def map_func(x: int) -> int:
-        if x == 0:  # no label found (e.g. bbox overlaps with sea -> "other" label will be used)
+def _cnes_transform(labels: np.ndarray, label_map: CnesLabelMap) -> np.ndarray:
+    """Maps the labels to a simplified label map."""
+    new_class_labels: list[str] = list(label_map.keys())
+
+    def map_func(label: int) -> int:
+        map_target: str = CNES_TO_SIMPLIFIED[label]
+        if label == 0 or map_target not in new_class_labels:  # cnes label is only 0, if we're out of france (e.g. sea)
             return 0
-        return label_keys.index(CNES_TO_SIMPLIFIED[x])
+        return new_class_labels.index(CNES_TO_SIMPLIFIED[label])
 
-    mapped_labels = np.vectorize(map_func)(first_dimension_labels)
-    return mapped_labels.astype(int)
+    return np.vectorize(map_func)(labels).astype(int)

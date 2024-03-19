@@ -4,8 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import rasterio
 
-from configs.data_config import DataDirs
-from src.data.download_data import AOIs
+from src.configs.data_config import AOIs, DataDirs
 
 
 def main() -> None:
