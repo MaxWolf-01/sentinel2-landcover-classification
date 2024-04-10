@@ -8,12 +8,12 @@ from functools import partial
 
 from torch import nn
 
+from data.s2osm_datamodule import S2OSMDatamoduleConfig
+from data.s2osm_dataset import S2OSMDatasetConfig
 from losses import LossType
 from lr_schedulers import LRSchedulerType
 from modules.efficientnet_unet import EfficientNetConfig, EfficientnetUnet
 from modules.prithvi_segmentation import PrithviSegmentationNet, PrithviSegmentationNetConfig
-from src.data.s2osm_datamodule import S2OSMDatamoduleConfig
-from src.data.s2osm_dataset import S2OSMDatasetConfig
 
 ModelConfig = PrithviSegmentationNetConfig | EfficientNetConfig
 
@@ -61,7 +61,9 @@ class Config:
             ModelName.EFFICIENTNET_UNET_B7: (EFFICIENTNET_UNET_B7, EfficientnetUnet),
         }
         model_config_partial, instantiator = name_to_model_mapping[self.model_name]
-        self.model = model_config_partial(num_classes=self.num_classes)
+        self.model = model_config_partial(
+            num_classes=self.num_classes, class_distribution=self.train.class_distribution
+        )
         return instantiator(self.model)
 
 
@@ -76,6 +78,8 @@ class TrainConfig:
 
     # loss
     loss_type: LossType
+    masked_loss: bool
+    weighted_loss: bool
 
     # compile
     compile_mode: str
@@ -98,9 +102,10 @@ class TrainConfig:
 
     seed: int = 42
 
+    class_distribution: list[float] | None = None  # set dynamically from dataset
+
     # loss_type specific
     label_smoothing: float = 0.0
-    focal_loss_alpha: float | None = None
     focal_loss_gamma: float | None = None
     dice_eps: float | None = None
     dice_focal_dice_weight: float | None = None
@@ -110,43 +115,47 @@ class TrainConfig:
     lr_scheduler_type: LRSchedulerType | None = None
     step_lr_sched_step_size: int | None = None
     step_lr_sched_gamma: float | None = None
-    cosine_warm_restarts_T_0: int | None = None
-    cosine_warm_restarts_eta_min: float | None = None
+    cosine_lr_sched_first_cycle_steps: int | None = None
+    cosine_lr_sched_cycle_mult: float | None = None
+    cosine_lr_sched_max_lr: float | None = None
+    cosine_lr_sched_min_lr: float | None = None
+    cosine_lr_sched_warmup_steps: int | None = None
+    cosine_lr_sched_gamma: float | None = None
 
 
 # TODO these are still initial / example values (including model configs etc.)
 BASE_CONFIG = partial(
     Config,
     datamodule=S2OSMDatamoduleConfig(
-        dataset_cfg=S2OSMDatasetConfig(aoi="at", label_map="multiclass"),
+        dataset_cfg=S2OSMDatasetConfig(aoi="fr", label_map="cnes-multiclass"),
         batch_size=32,
         num_workers=1,
         pin_memory=True,
-        augment=True,
         data_split=(0.8, 0.2, 0.0),
         val_batch_size_multiplier=2,
-        # transforms
-        random_crop_size=224,
+        # augmentations
+        augment=True,
+        random_vertical_flip_p=0.5,
+        random_horizontal_flip_p=0.5,
     ),
     train=TrainConfig(
         project_name="sentinel-segmentation",
-        lr=1.5e-05,
+        lr=1.5e-06,
         weight_decay=0.05,
         betas=(0.9, 0.999),
-        float32_matmul_precision="high",  # todo set to medium later
+        float32_matmul_precision="medium",
         compile_mode="max-autotune",
         compile_fullgraph=True,
         compile_disable=False,
         max_epochs=-1,
         log_interval=50,
         devices=1,
-        precision="32-true",  # todo set to bf16 later
+        precision="bf16",
         overfit_batches=0.0,
         use_wandb_logger=True,
-        # loss
-        loss_type=LossType.FOCAL,
-        focal_loss_alpha=0.25,
-        focal_loss_gamma=2,
+        loss_type=LossType.CE,
+        masked_loss=True,
+        weighted_loss=False,
         # lr scheduler
         lr_scheduler_type=None,
     ),

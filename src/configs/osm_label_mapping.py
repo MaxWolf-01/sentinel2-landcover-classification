@@ -3,20 +3,22 @@ import typing
 OSMTagMap = dict[str, str | bool]  # collection of osm tags, see parameter tags of osmnx.features.features_from_bbox
 
 
-class LabelEntry(typing.TypedDict):
+class OsmLabelEntry(typing.TypedDict):
     color: str
     osm_tags: OSMTagMap
 
 
 # NOTE: The ordering of the top-level keys determines the priority of the classes (in case of label overlap)
-# The last label in the dictionary has the highest priority (as it overwrites the previous ones)
-LabelMap = dict[str, LabelEntry]
+#             -> last label in the dictionary has the highest priority (as it overwrites the previous ones)
+OsmLabelMap = dict[str, OsmLabelEntry]
 
-MULTICLASS_MAP: LabelMap = {
+_OTHER: OsmLabelMap = {
     "other": {
         "color": "#000000",
         "osm_tags": {},
-    },
+    }
+}
+_AGRICULTURE: OsmLabelMap = {
     "agriculture": {
         "color": "#f5a142",
         "osm_tags": {
@@ -53,7 +55,9 @@ MULTICLASS_MAP: LabelMap = {
                 "vine",
             ],
         },
-    },
+    }
+}
+_NATURE: OsmLabelMap = {
     "nature": {
         "color": "#00ff00",
         "osm_tags": {
@@ -70,7 +74,6 @@ MULTICLASS_MAP: LabelMap = {
                 "meadow",
                 "mountain_pass",
                 "mountain_ridge",
-                "recreation_ground",
                 "village_green",
             ],
             "leisure": [
@@ -110,7 +113,10 @@ MULTICLASS_MAP: LabelMap = {
                 "swamp",
             ],
         },
-    },
+    }
+}
+
+_IMPERVIOUS_SURFACE: OsmLabelMap = {
     "impervious_surface": {
         "color": "#646464",
         "osm_tags": {
@@ -121,11 +127,6 @@ MULTICLASS_MAP: LabelMap = {
             ],
             "barrier": [
                 "city_wall",
-                "fence",
-                "guard_rail",
-                "kerb",
-                "retaining_wall",
-                "wall",
             ],
             "building": True,
             "highway": True,
@@ -138,7 +139,6 @@ MULTICLASS_MAP: LabelMap = {
                 "garages",
                 "impervious_surface",
                 "industrial",
-                "institutional",
                 "landfill",
                 "military",
                 "port",
@@ -154,7 +154,6 @@ MULTICLASS_MAP: LabelMap = {
             "man_made": [
                 "bridge",
                 "pier",
-                "reservoir_covered",
                 "tower",
                 "wastewater_plant",
                 "water_works",
@@ -176,12 +175,6 @@ MULTICLASS_MAP: LabelMap = {
                 "sett",
                 "unhewn_cobblestone",
             ],
-            "tourism": [
-                "aquarium",
-                "attraction",
-                "theme_park",
-                "zoo",
-            ],
             "waterway": [
                 "dock",
                 "lock_gate",
@@ -189,13 +182,7 @@ MULTICLASS_MAP: LabelMap = {
         },
     },
 }
-
-BINARY_MAP: LabelMap = {
-    "other": MULTICLASS_MAP["other"],
-    "impervious_surface": MULTICLASS_MAP["impervious_surface"],
-}
-
-MAPS = {
-    "binary": BINARY_MAP,
-    "multiclass": MULTICLASS_MAP,
-}
+OSM_MULTICLASS: OsmLabelMap = _OTHER | _AGRICULTURE | _NATURE | _IMPERVIOUS_SURFACE
+OSM_BINARY_IMPERVIOUS: OsmLabelMap = _OTHER | _IMPERVIOUS_SURFACE
+OSM_BINARY_NATURE: OsmLabelMap = _OTHER | _NATURE
+OSM_BINARY_AGRICULTURE: OsmLabelMap = _OTHER | _AGRICULTURE

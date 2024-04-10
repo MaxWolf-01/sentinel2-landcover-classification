@@ -7,9 +7,9 @@ from tqdm import tqdm
 from typing import Tuple
 
 
-def calculate_mean_std(dataset: torch.utils.data.Dataset, save_path: Path) -> None:
+def calculate_mean_std(dataset: torch.utils.data.Dataset, save_path: Path, dim: tuple[int, ...]) -> None:
     dataloader: DataLoader = DataLoader(dataset, shuffle=False)
-    welford: WelfordsMethod = WelfordsMethod(dim=(0, 1, 3, 4))
+    welford: WelfordsMethod = WelfordsMethod(dim=dim)
     for batch in tqdm(dataloader):
         data: torch.Tensor = batch.x
         welford.update(data)

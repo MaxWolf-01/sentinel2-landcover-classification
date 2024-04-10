@@ -4,8 +4,8 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 
-from data.mae_datamodule import MAEDatamoduleConfig
-from data.mae_dataset import MAEDatasetConfig
+from src.data.mae_datamodule import MAEDatamoduleConfig
+from src.data.mae_dataset import MAEDatasetConfig
 
 
 @dataclass

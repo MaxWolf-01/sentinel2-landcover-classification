@@ -23,18 +23,17 @@ from torch import nn
 from torchmetrics import Accuracy, JaccardIndex as IoU
 from torchmetrics.classification import MulticlassConfusionMatrix
 
-import src.configs.segmentation as cfg
-from configs.label_mappings import LabelMap, MAPS
-from data.download_data import AOIs
-from losses import Loss, LossType, get_loss
-from lr_schedulers import LRSchedulerType, get_lr_scheduler
-from plotting import load_sentinel_tiff_for_plotting
+import configs.segmentation as cfg
+from src.configs.data_config import AOIs, LABEL_MAPS, LabelMap
 from src.configs.paths import CKPT_DIR, LOG_DIR, ROOT_DIR
 from src.configs.segmentation import Config
 from src.data.calculate_dataset_statistics import calculate_mean_std
 from src.data.s2osm_datamodule import S2OSMDatamodule
 from src.data.s2osm_dataset import S2OSMDataset, S2OSMSample
-from src.utils import get_logger, get_unique_run_name
+from src.losses import Loss, LossType, get_loss
+from src.lr_schedulers import LRSchedulerType, get_lr_scheduler
+from src.plotting import load_sentinel_tiff_for_plotting
+from src.utils import get_class_probabilities, get_logger, get_unique_run_name
 
 script_logger = get_logger(__name__)
 
@@ -48,12 +47,15 @@ class SegmentationModule(pl.LightningModule):
         self.save_hyperparameters(logger=False, ignore=["net", "optuna_trial"])
         self.net: nn.Module = config.get_model()
         self.loss_fn: Loss = get_loss(config)
-        self.label_map: LabelMap = MAPS[config.datamodule.dataset_cfg.label_map]
-        task: Literal["binary", "multiclass"] = (
-            "binary" if config.datamodule.dataset_cfg.label_map == "binary" else "multiclass"
-        )
+        label_map: LabelMap = LABEL_MAPS[config.datamodule.dataset_cfg.label_map]
+        self.class_labels: dict[int, str] = {i: label for i, label in enumerate(label_map)}
+        task: Literal["binary", "multiclass"] = "binary" if self.config.num_classes == 2 else "multiclass"
         metrics = lambda: {  # noqa: E731
-            "confusion_matrix": MulticlassConfusionMatrix(num_classes=config.num_classes),
+            "confusion_matrix": MulticlassConfusionMatrix(
+                num_classes=config.num_classes,
+                ignore_index=0 if config.train.masked_loss else None,
+                normalize="true",
+            ),
             "iou": IoU(task=task, num_classes=config.num_classes),
             "accuracy": Accuracy(task=task, num_classes=config.num_classes),
             "f1": torchmetrics.F1Score(task=task, num_classes=config.num_classes),
@@ -140,7 +142,7 @@ class SegmentationModule(pl.LightningModule):
 
         self.log(f"{mode}/loss", loss)
 
-        self.update_metrics(mode, predictions=torch.argmax(logits, dim=1), labels=y)
+        self.update_metrics(mode, predictions=logits.argmax(dim=1), labels=y)
 
         return loss
 
@@ -161,12 +163,15 @@ class SegmentationModule(pl.LightningModule):
             if np.prod(metric_value.shape) == 1:
                 self.log(f"{mode}/{metric_name}", metric_value.item())
 
-    def log_image_metrics(self, computed_metrics: dict[str, npt.NDArray], mode: Mode) -> None:
+    def log_image_metrics(self, computed_metrics: dict[str, np.ndarray], mode: Mode) -> None:
         if not isinstance(self.logger, WandbLogger):
             return
-        # confusion matrix
-        class_labels: dict[int, str] = {i: label for i, label in enumerate(self.label_map)}
-        log_confusion_matrix(mode, conf_matrix=computed_metrics["confusion_matrix"], class_labels=class_labels)
+        confusion_matrix = computed_metrics["confusion_matrix"]
+        class_labels = self.class_labels
+        if self.config.train.masked_loss:  # remove background class from confusion matrix
+            confusion_matrix = confusion_matrix[1:, 1:]
+            class_labels = {k: v for k, v in class_labels.items() if k != 0}
+        log_confusion_matrix(mode, conf_matrix=confusion_matrix, class_labels=class_labels)
         # segmentation predictions
         dataset: S2OSMDataset = self.trainer.val_dataloaders.dataset.dataset
         if mode == "train":
@@ -177,13 +182,13 @@ class SegmentationModule(pl.LightningModule):
             f"{mode}/segmentation",
             dataset=dataset,
             idx=None,  # random
-            class_labels=class_labels,
+            class_labels=self.class_labels,
         )
         self._log_segmentation_pred(
             f"{mode}/fixed_prediction_dynamics",
             dataset=dataset,
             idx=0,
-            class_labels=class_labels,
+            class_labels=self.class_labels,
         )
 
     def _log_segmentation_pred(
@@ -215,13 +220,8 @@ class SegmentationModule(pl.LightningModule):
 
 
 def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict[int, str]) -> None:
-    row_sums = conf_matrix.sum(axis=1, keepdims=True)
-    normalized_conf_matrix = conf_matrix / row_sums
-
     fig, ax = plt.subplots(figsize=(10, 8))
-    cax = ax.matshow(normalized_conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=normalized_conf_matrix.max()))
-    fig.colorbar(cax)
-
+    fig.colorbar(ax.matshow(conf_matrix, cmap="Blues", norm=Normalize(vmin=0, vmax=conf_matrix.max())))
     ax.set_xlabel("Predicted Labels")
     ax.set_ylabel("True Labels")
     ax.set_xticks((ticks := np.arange(len(class_labels))))
@@ -230,7 +230,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
     ax.set_yticklabels(label_texts)
     plt.tight_layout()
 
-    for (i, j), val in np.ndenumerate(normalized_conf_matrix):
+    for (i, j), val in np.ndenumerate(conf_matrix):
         ax.text(j, i, f"{val:.2f}", ha="center", va="center", color="black")
 
     buf = io.BytesIO()
@@ -242,7 +242,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
     model: SegmentationModule = SegmentationModule(config, optuna_trial=trial)
-    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule)
+    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule, masked_loss=config.train.masked_loss)
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(
             monitor="val/loss",
@@ -255,7 +255,7 @@ def train(config: Config, trial: optuna.Trial | None = None) -> None:
         ),
         # pl.callbacks.BackboneFinetuning(), might be helpful?
     ]
-    callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="step")] if config.train.use_wandb_logger else []
+    callbacks += [pl.callbacks.LearningRateMonitor(logging_interval="epoch")] if config.train.use_wandb_logger else []
     logger: WandbLogger | bool = (
         WandbLogger(
             entity=config.train.wandb_entity,
@@ -292,15 +292,24 @@ def objective(trial: optuna.Trial) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help=f"Model type. One of: {list(cfg.ModelName)}")
-    parser.add_argument("--labels", type=str, default="multiclass", help=f"one of {list(MAPS)}. Default: multiclass")
+    parser.add_argument("--labels", type=str, required=True, help=f"one of {list(LABEL_MAPS)}.")
     parser.add_argument("--type", type=str, default="train", help="[train, debug, overfit, ...]. Default: train")
     parser.add_argument("--loss-type", type=str, default=None, help=f"Available: {list(LossType)}")
     parser.add_argument("--lr-scheduler", type=str, default=None, help=f"Available: {list(LRSchedulerType)}")
     parser.add_argument("--bs", type=int, default=None, help="batch size.")
     parser.add_argument("--epochs", type=int, default=None, help="Number of epochs. -1 = infinite")
     parser.add_argument("--log-interval", type=int, default=None, help="Log interval. Default: 50")
-    parser.add_argument("--aoi", type=str, default=None, help=f"one of {list(AOIs)}")
+    parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
+    parser.add_argument("--focal-loss-gamma", type=float, default=None)
+    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss.")
+    parser.add_argument("--weighted-sampling", action="store_true", help="Use class-frequency based sampling")
+    parser.add_argument("--cosine-lr-sched-first-cycle-steps", type=int, default=None)
+    parser.add_argument("--cosine-lr-sched-cycle-mult", type=float, default=None)
+    parser.add_argument("--cosine-lr-sched-max-lr", type=float, default=None)
+    parser.add_argument("--cosine-lr-sched-min-lr", type=float, default=None)
+    parser.add_argument("--cosine-lr-sched-warmup-steps", type=int, default=None)
+    parser.add_argument("--cosine-lr-sched-gamma", type=float, default=None)
     parser.add_argument("--name", type=str, default=None, help="run name prefix. Default: None")
     parser.add_argument("--wandb", action="store_true", help="DISABLE wandb logging.")
     parser.add_argument(  # list of tags
@@ -311,11 +320,12 @@ def main() -> None:
 
     config: Config = cfg.BASE_CONFIG(model_name=args.model)
     config = cfg.set_run_type(config, args.type)
-    config.num_classes = len(MAPS[config.datamodule.dataset_cfg.label_map])
     config.datamodule.dataset_cfg.label_map = args.labels or config.datamodule.dataset_cfg.label_map
+    config.num_classes = len(LABEL_MAPS[config.datamodule.dataset_cfg.label_map])
     config.model_name = args.model or config.model_name
     config.datamodule.dataset_cfg.aoi = args.aoi or config.datamodule.dataset_cfg.aoi
     config.datamodule.batch_size = args.bs or config.datamodule.batch_size
+    config.train.loss_type = args.loss_type or config.train.loss_type
     config.train.max_epochs = args.epochs or config.train.max_epochs
     config.train.log_interval = args.log_interval or config.train.log_interval
     config.train.compile_disable = args.no_compile or config.train.compile_disable
@@ -324,13 +334,35 @@ def main() -> None:
     config.train.run_name = get_unique_run_name(name=args.name, postfix=config.train.project_name)
     dotenv.load_dotenv()
     config.train.wandb_entity = os.getenv("WANDB_ENTITY")
+    config.train.weighted_loss = args.weighted_loss or config.train.weighted_loss
+    config.train.focal_loss_gamma = args.focal_loss_gamma or config.train.focal_loss_gamma
+    config.train.lr_scheduler_type = args.lr_scheduler or config.train.lr_scheduler_type
+    config.train.cosine_lr_sched_first_cycle_steps = args.cosine_lr_sched_first_cycle_steps
+    config.train.cosine_lr_sched_cycle_mult = args.cosine_lr_sched_cycle_mult
+    config.train.cosine_lr_sched_max_lr = args.cosine_lr_sched_max_lr
+    config.train.cosine_lr_sched_min_lr = args.cosine_lr_sched_min_lr
+    config.train.cosine_lr_sched_warmup_steps = args.cosine_lr_sched_warmup_steps
+    config.train.cosine_lr_sched_gamma = args.cosine_lr_sched_gamma
 
     script_logger.info(f"Using config in mode'{args.type}':\n{pprint.pformat(dataclasses.asdict(config))}")
 
+    ds = S2OSMDataset(config.datamodule.dataset_cfg)
+    script_logger.info("Computing class weights...")
+    class_distribution: list[float] = get_class_probabilities(
+        dataset=ds, ignore_zero_label=config.train.masked_loss
+    ).tolist()
+    config.train.class_distribution = class_distribution
+    script_logger.info(
+        f"Computed class weights: {class_distribution} for classes: "
+        f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
+    )
+    if args.weighted_sampling:
+        config.datamodule.class_distribution = class_distribution
+
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
-        dataset = S2OSMDataset(config.datamodule.dataset_cfg)
-        calculate_mean_std(dataset, save_path=dataset.data_dirs.base_path / "mean_std.pt")
+        dim = (0, 2, 3)  # (0, 1, 3, 4) in case we have time dimension
+        calculate_mean_std(ds, dim=dim, save_path=ds.data_dirs.base_path / "mean_std.pt")
 
     pl.seed_everything(config.train.seed)  # after creating run_name
     if args.type == "tune":

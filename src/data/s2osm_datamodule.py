@@ -7,8 +7,8 @@ import albumentations as A
 import lightning.pytorch as pl
 import torch
 
-from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import Subset, get_logger, train_val_test_split
+from data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
+from utils import Subset, get_logger, get_sample_weights, train_val_test_split
 
 logger = get_logger(__name__)
 
@@ -25,11 +25,15 @@ class S2OSMDatamoduleConfig:
     val_batch_size_multiplier: int
 
     # transform params
-    random_crop_size: int
+    random_horizontal_flip_p: float
+    random_vertical_flip_p: float
+    random_crop_size: int = 224
+
+    class_distribution: list[float] | None = None  # set dynamically from dataset for weighted sampling if enabled
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
-    def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
+    def __init__(self, cfg: S2OSMDatamoduleConfig, masked_loss: bool) -> None:
         super().__init__()
         self.cfg: S2OSMDatamoduleConfig = cfg
 
@@ -37,6 +41,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.num_workers: int = cfg.num_workers
         self.pin_memory: bool = cfg.pin_memory
         self.augment: bool = cfg.augment
+        self.masked_loss: bool = masked_loss
 
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
@@ -69,9 +74,8 @@ class S2OSMDatamodule(pl.LightningDataModule):
 
         augmentation_transforms = [
             A.RandomCrop(width=self.cfg.random_crop_size, height=self.cfg.random_crop_size, always_apply=True),
-            # todo add transforms after evaluation pipeline is set up
-            # A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
-            # A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
+            A.HorizontalFlip(p=self.cfg.random_horizontal_flip_p),
+            A.VerticalFlip(p=self.cfg.random_vertical_flip_p),
             A.Normalize(mean=mean, std=std),  # Normalize comes last!
         ]
         # necessary transforms
@@ -92,7 +96,16 @@ class S2OSMDatamodule(pl.LightningDataModule):
         )
 
     def train_dataloader(self) -> torch.utils.data.DataLoader:
-        return self.dataloader_partial(self.train, shuffle=True)
+        sampler = None
+        if self.cfg.class_distribution is not None:
+            sample_weights: torch.Tensor = get_sample_weights(
+                self.train, class_distribution=self.cfg.class_distribution, ignore_zero_label=self.masked_loss
+            )
+            sampler = torch.utils.data.WeightedRandomSampler(
+                sample_weights, num_samples=len(self.train), replacement=True
+            )
+        shuffle = True if sampler is None else False
+        return self.dataloader_partial(self.train, shuffle=shuffle, sampler=sampler)
 
     def val_dataloader(self) -> torch.utils.data.DataLoader:
         return self.dataloader_partial(self.val, batch_size=self.batch_size * self.val_batch_size_multiplier)
