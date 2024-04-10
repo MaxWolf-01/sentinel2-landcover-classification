@@ -7,7 +7,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from data.download_mae_data import get_mae_data_dir
+from src.data.download_mae_data import get_mae_data_dir
 from src.utils import get_logger
 import albumentations as A
 import numpy.typing as npt

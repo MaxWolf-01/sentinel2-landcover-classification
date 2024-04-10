@@ -5,6 +5,9 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 from torch import nn
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 Loss = typing.Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
@@ -16,8 +19,13 @@ class LossType(str, enum.Enum):
     DICE_FOCAL = "dice_focal"
 
 
+# TODO write binary verisions!
 def get_loss(config) -> Loss:
-    class_weights = torch.tensor(config.train.loss_class_weights) if config.train.loss_class_weights else None
+    if config.train.weighted_loss:
+        class_weights = torch.tensor(config.train.class_distribution)
+        skip_first = int(config.train.masked_loss)
+        class_weights[skip_first:] = 1 - class_weights[skip_first:]
+        logger.info(f"Calculated loss class weights {class_weights}")
     assert (
         class_weights is None or len(class_weights) == config.num_classes
     ), f"{len(class_weights)}!={config.num_classes}"
@@ -30,7 +38,7 @@ def get_loss(config) -> Loss:
             )
         case LossType.FOCAL:
             return FocalLoss(
-                alpha=class_weights or torch.tensor([1.0] * config.num_classes),
+                alpha=class_weights if class_weights is not None else torch.tensor([1.0] * config.num_classes),
                 gamma=config.train.focal_loss_gamma,
                 label_smoothing=config.train.label_smoothing,
                 ignore_index=0 if config.train.masked_loss else -100,
@@ -43,7 +51,7 @@ def get_loss(config) -> Loss:
                 l2_weight=config.train.dice_focal_focal_weight,
                 l1=DiceLoss(eps=config.train.dice_eps),
                 l2=FocalLoss(
-                    alpha=class_weights or torch.tensor([1.0] * config.num_classes),
+                    alpha=class_weights if class_weights is not None else torch.tensor([1.0] * config.num_classes),
                     gamma=config.train.focal_loss_gamma,
                     label_smoothing=config.train.label_smoothing,
                     ignore_index=0 if config.train.masked_loss else -100,

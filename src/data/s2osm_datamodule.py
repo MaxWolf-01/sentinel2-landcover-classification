@@ -7,8 +7,8 @@ import albumentations as A
 import lightning.pytorch as pl
 import torch
 
-from src.data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
-from src.utils import Subset, get_logger, train_val_test_split
+from data.s2osm_dataset import S2OSMDataset, S2OSMDatasetConfig
+from utils import Subset, get_logger, train_val_test_split
 
 logger = get_logger(__name__)
 

@@ -12,6 +12,8 @@ import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 from torch import nn
 
+from utils import initialize_classification_layer_bias
+
 
 @dataclass
 class EfficientNetConfig:
@@ -23,6 +25,7 @@ class EfficientNetConfig:
     depth_divisor: int | None = 8
     drop_connect_rate: float | None = 0.2
     min_depth: int | None = None
+    class_distribution: list[float] | None = None  # optional initial probability for weight initialization
     # these are set based on the version (but can be overwritten):
     dropout_rate: float | None = None
     width_coefficient: float | None = None
@@ -117,6 +120,7 @@ class EfficientnetUnet(nn.Module):
             self.input_double_conv: nn.Sequential = _double_conv(self.size[4], 32)
         self.out_conv1x1: nn.Conv2d = nn.Conv2d(self.size[5], config.num_classes, kernel_size=1)
         self.apply(init_weights)
+        initialize_classification_layer_bias(self.out_conv1x1, class_distribution=config.class_distribution)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x

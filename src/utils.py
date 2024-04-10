@@ -10,6 +10,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from torch import nn
 
 from src.configs.paths import CONFIG_DIR, LOG_DIR, PRE_TRAINED_WEIGHTS_DIR
 from src.modules.prithvi import MaskedAutoencoderViT
@@ -146,3 +147,37 @@ def train_val_test_split(
     if deepcopy:
         train, val, test = copy.deepcopy(train), copy.deepcopy(val), copy.deepcopy(test)
     return train, val, test
+
+
+def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_label: int = -1) -> torch.Tensor:
+    """Calculate dataset class frequency as probabilities. Uses random sample if the dataset is large.
+    Args:
+        dataset (torch.utils.data.Dataset): dataset to calculate class probabilities for.
+        ignore_label (int): class label to ignore when calculating class frequencies.
+    Returns:
+        class_weights (torch.Tensor): class weights to be used in the loss function, sorted by class index.
+    """
+    sample_labels = torch.cat([dataset[i][1] for i in random.sample(range(len(dataset)), k=min(2500, len(dataset)))])
+    unique, counts = torch.unique(sample_labels, return_counts=True, sorted=True)  # (C,), (C,)
+    if ignore_label != -1:
+        counts = counts[unique != ignore_label]  # (C-1,)
+    assert all(counts) > 0, counts
+    class_weights = counts / counts.sum()
+    return class_weights
+
+
+def initialize_classification_layer_bias(layer: nn.Linear | nn.Conv2d, class_distribution: list[float]) -> None:
+    """Initialize the bias of the classification layer to reflect the class distribution.
+    Args:
+        layer (nn.Linear | nn.Conv2d): classification layer to initialize.
+        class_distribution (list[float]): class distribution to initialize the bias with.
+    """
+    distribution = torch.tensor(class_distribution, dtype=torch.float32) + 1e-6  # small eps to avoid log(0) & div by 0
+    assert torch.isclose(
+        distribution.sum(), torch.tensor(1.0)
+    ), f"Must sum to 1, got distribution: {class_distribution}"
+    assert len(class_distribution) > 1, "Class distribution must have at least 2 classes"
+    if len(distribution) == 2:
+        layer.bias.data.fill_((distribution[1] / distribution[0]).log())  # positive/negative class
+    else:
+        layer.bias.data = distribution.log()

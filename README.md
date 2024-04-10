@@ -23,7 +23,7 @@ export PYTHONPATH="$PYTHONPATH:$(pwd)"
 To download the training data, run:
 
 ```bash
-python src/data/download_data.py  # specify area of interest via "--aoi". List available and default values via "--help"
+python src/data/download_s2_osm_data.py  # specify area of interest via "--aoi". List available and default values via "--help"
 ```
 
 Once that is done, run the training, eg.:
