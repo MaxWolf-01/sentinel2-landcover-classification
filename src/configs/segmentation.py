@@ -155,7 +155,7 @@ BASE_CONFIG = partial(
         use_wandb_logger=True,
         loss_type=LossType.CE,
         masked_loss=True,
-        weighted_loss=True,
+        weighted_loss=False,
         # lr scheduler
         lr_scheduler_type=None,
     ),

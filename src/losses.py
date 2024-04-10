@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 from torch import nn
+
 from src.utils import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +22,7 @@ class LossType(str, enum.Enum):
 
 # TODO write binary verisions!
 def get_loss(config) -> Loss:
+    class_weights = None
     if config.train.weighted_loss:
         class_weights = torch.tensor(config.train.class_distribution)
         skip_first = int(config.train.masked_loss)
@@ -77,7 +79,7 @@ class FocalLoss:
         ce_loss = F.cross_entropy(
             y_hat,
             y,
-            label_smoothing=self.label_smoothing,
+            label_smoothing=self.label_smoothing,  # todo this correct?
             ignore_index=self.ignore_index,
             reduction="none",  # keep per-batch-item loss
         )
@@ -88,7 +90,7 @@ class FocalLoss:
 
 
 @dataclass
-class DiceLoss:  # todo this also exists as a torchmetric
+class DiceLoss:
     # https://arxiv.org/pdf/1606.04797.pdf
     eps: float = 1e-8
     ignore_index: int = -100

@@ -242,7 +242,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
     model: SegmentationModule = SegmentationModule(config, optuna_trial=trial)
-    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule)
+    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule, masked_loss=config.train.masked_loss)
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(
             monitor="val/loss",
@@ -302,7 +302,8 @@ def main() -> None:
     parser.add_argument("--aoi", type=str, required=True, help=f"one of {list(AOIs)}")
     parser.add_argument("--recompute-mean-std", action="store_true", help="Recompute dataset mean and std.")
     parser.add_argument("--focal-loss-gamma", type=float, default=None)
-    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss. Default: False")
+    parser.add_argument("--weighted-loss", action="store_true", help="Calculate class weights for loss.")
+    parser.add_argument("--weighted-sampling", action="store_true", help="Use class-frequency based sampling")
     parser.add_argument("--cosine-lr-sched-first-cycle-steps", type=int, default=None)
     parser.add_argument("--cosine-lr-sched-cycle-mult", type=float, default=None)
     parser.add_argument("--cosine-lr-sched-max-lr", type=float, default=None)
@@ -347,14 +348,16 @@ def main() -> None:
 
     ds = S2OSMDataset(config.datamodule.dataset_cfg)
     script_logger.info("Computing class weights...")
-    class_distribution: list[float] = get_class_probabilities(dataset=ds, ignore_label=0).tolist()
-    if len(class_distribution) != config.num_classes:  # add 0 for background class
-        class_distribution = [0] + class_distribution
+    class_distribution: list[float] = get_class_probabilities(
+        dataset=ds, ignore_zero_label=config.train.masked_loss
+    ).tolist()
     config.train.class_distribution = class_distribution
     script_logger.info(
         f"Computed class weights: {class_distribution} for classes: "
         f"{LABEL_MAPS[config.datamodule.dataset_cfg.label_map].keys()}"
     )
+    if args.weighted_sampling:
+        config.datamodule.class_distribution = class_distribution
 
     if args.recompute_mean_std:
         script_logger.info("Recomputing mean and std...")
