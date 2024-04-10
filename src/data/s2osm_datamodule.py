@@ -33,7 +33,7 @@ class S2OSMDatamoduleConfig:
 
 
 class S2OSMDatamodule(pl.LightningDataModule):
-    def __init__(self, cfg: S2OSMDatamoduleConfig) -> None:
+    def __init__(self, cfg: S2OSMDatamoduleConfig, masked_loss: bool) -> None:
         super().__init__()
         self.cfg: S2OSMDatamoduleConfig = cfg
 
@@ -41,6 +41,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
         self.num_workers: int = cfg.num_workers
         self.pin_memory: bool = cfg.pin_memory
         self.augment: bool = cfg.augment
+        self.masked_loss: bool = masked_loss
 
         self.data_split: tuple[float, float, float] = cfg.data_split
         assert sum(self.data_split) == 1.0, "Data split must sum to 1.0"
@@ -98,7 +99,7 @@ class S2OSMDatamodule(pl.LightningDataModule):
         sampler = None
         if self.cfg.class_distribution is not None:
             sample_weights: torch.Tensor = get_sample_weights(
-                self.train, class_distribution=self.cfg.class_distribution, ignore_index=0
+                self.train, class_distribution=self.cfg.class_distribution, ignore_zero_label=self.masked_loss
             )
             sampler = torch.utils.data.WeightedRandomSampler(
                 sample_weights, num_samples=len(self.train), replacement=True

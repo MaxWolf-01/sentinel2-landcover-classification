@@ -242,7 +242,7 @@ def log_confusion_matrix(mode: Mode, conf_matrix: np.ndarray, class_labels: dict
 
 def train(config: Config, trial: optuna.Trial | None = None) -> None:
     model: SegmentationModule = SegmentationModule(config, optuna_trial=trial)
-    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule)
+    datamodule: S2OSMDatamodule = S2OSMDatamodule(config.datamodule, masked_loss=config.train.masked_loss)
     callbacks: list[pl.Callback] = [
         pl.callbacks.ModelCheckpoint(
             monitor="val/loss",
@@ -348,9 +348,9 @@ def main() -> None:
 
     ds = S2OSMDataset(config.datamodule.dataset_cfg)
     script_logger.info("Computing class weights...")
-    class_distribution: list[float] = get_class_probabilities(dataset=ds, ignore_label=0).tolist()
-    if len(class_distribution) != config.num_classes:  # add 0 for background class
-        class_distribution = [0] + class_distribution
+    class_distribution: list[float] = get_class_probabilities(
+        dataset=ds, ignore_zero_label=config.train.masked_loss
+    ).tolist()
     config.train.class_distribution = class_distribution
     script_logger.info(
         f"Computed class weights: {class_distribution} for classes: "

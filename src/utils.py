@@ -149,20 +149,25 @@ def train_val_test_split(
     return train, val, test
 
 
-def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_label: int = -1) -> torch.Tensor:
+def get_class_probabilities(dataset: torch.utils.data.Dataset, ignore_zero_label: bool) -> torch.Tensor:
     """Calculate dataset class frequency as probabilities. Uses random sample if the dataset is large.
     Args:
         dataset (torch.utils.data.Dataset): dataset to calculate class probabilities for.
-        ignore_label (int): class label to ignore when calculating class frequencies.
+        ignore_zero_label (bool): whether to ignore the zero class when calculating class probabilities.
+            If True, the zero class will have a probability of 0.
     Returns:
         class_weights (torch.Tensor): class weights to be used in the loss function, sorted by class index.
     """
     sample_labels = torch.cat([dataset[i][1] for i in random.sample(range(len(dataset)), k=min(2500, len(dataset)))])
     unique, counts = torch.unique(sample_labels, return_counts=True, sorted=True)  # (C,), (C,)
-    if ignore_label != -1:
-        counts = counts[unique != ignore_label]  # (C-1,)
-    assert all(counts) > 0, counts
+    if ignore_zero_label:
+        counts[0] = 0
     class_weights = counts / counts.sum()
+    # if a class is missing, i.e. the array does not look like an arange, we need to fill it up with zeros
+    if len(class_weights) != unique.max() + 1:
+        all_classes = torch.arange(unique.max())
+        all_classes = all_classes[~torch.isin(all_classes, unique)]
+        class_weights = torch.cat((class_weights, torch.zeros(len(all_classes))))
     return class_weights
 
 
@@ -184,32 +189,29 @@ def initialize_classification_layer_bias(layer: nn.Linear | nn.Conv2d, class_dis
 
 
 def get_sample_weights(
-    dataset: torch.utils.data.Dataset, class_distribution: list[float], ignore_index: int
+    dataset: torch.utils.data.Dataset, class_distribution: list[float], ignore_zero_label: bool = False
 ) -> torch.Tensor:
-    """Calculate sample weights based on global class distribution.
+    """Calculate sampling weights for the Dataloader based on global class distribution.
     Args:
         dataset (torch.utils.data.Dataset): dataset to calculate sample weights for.
         class_distribution (list[float]): overall dataset class distribution to calculate sample weights from.
-        ignore_index (int): class label to ignore when calculating sample weights.
+        ignore_zero_label (bool): whether to set the sampling weight for the zero class to 0.
     Returns:
         sample_weights (torch.Tensor): weights for each sample in the dataset.
     """
-    # TODO verify correct handle ignore idx
     global_class_distribution = torch.tensor(class_distribution, dtype=torch.float32)
-    mask = global_class_distribution != ignore_index
-    global_class_distribution = global_class_distribution[mask]
-    num_classes = len(global_class_distribution)
     sample_weights = []
     for i in range(len(dataset)):
         _, label = dataset[i]
-        local_class_distribution = torch.bincount(label.flatten(), minlength=num_classes).float()[mask]
-        local_class_distribution /= local_class_distribution.sum()
-
-        # high class deviation from global norm -> high sample weight
-        class_deviation = (local_class_distribution - global_class_distribution).abs()
-        sample_weight = class_deviation.sum() / num_classes
-
+        local_class_counts = torch.zeros(len(global_class_distribution), dtype=torch.long)
+        unique, counts = torch.unique(label, return_counts=True)
+        local_class_counts[unique] = counts
+        if ignore_zero_label:
+            local_class_counts[0] = 0
+        local_class_distribution = local_class_counts / local_class_counts.sum()
+        # high class deviation from dataset distribution -> high sample weight
+        sample_weight = (local_class_distribution - global_class_distribution).abs().sum()
         sample_weights.append(sample_weight)
     sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
-    sample_weights /= sample_weights.sum()  # Normalize sample weights
-    return sample_weights  # TODO visualize
+    sample_weights /= sample_weights.sum()
+    return sample_weights

@@ -87,7 +87,7 @@ def _cnes_transform(labels: np.ndarray, label_map: CnesLabelMap) -> np.ndarray:
     new_class_labels: list[str] = list(label_map.keys())
 
     def map_func(label: int) -> int:
-        map_target: str = CNES_TO_SIMPLIFIED[label]
+        map_target: str = CNES_TO_SIMPLIFIED.get(label, "_")
         if label == 0 or map_target not in new_class_labels:  # cnes label is only 0, if we're out of france (e.g. sea)
             return 0
         return new_class_labels.index(CNES_TO_SIMPLIFIED[label])
