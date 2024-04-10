@@ -189,7 +189,6 @@ def debug(config: Config) -> Config:
     config.train.devices = 1
     config.datamodule.batch_size = 1
     config.train.compile_disable = True
-    config.train.log_img_in_train = True
     config.train.tags.append("debug")
     return config
 
@@ -197,7 +196,6 @@ def debug(config: Config) -> Config:
 def overfit(config: Config) -> Config:
     config.train.overfit_batches = 1
     config.datamodule.augment = False
-    config.train.log_img_in_train = True
     config.train.tags.append("overfit")
     return config
 
