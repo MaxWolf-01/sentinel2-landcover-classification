@@ -5,6 +5,9 @@ The current pipeline allows for training a U-Net model with an EfficientNet back
 Labels can be fetched from [OpenStreetMap](https://www.openstreetmap.org) all over the world, or from the [CNES Land Cover dataset](https://collections.sentinel-hub.com/cnes-land-cover-map/) for France.
 Finetuning Prithvi is WIP, as well as unsupervised pre-training for the U-Net and the Prithvi model.
 
+The project was initially developed as part of diploma-project at [HTL-Spengergasse](https://www.spengergasse.at/) in cooperation with [EOX IT Services](https://eox.at/) and supported by the [ESA Network of Resources Initiative](https://eo4society.esa.int/network-of-resources/).
+Team: [Maximilian Wolf](https://github.com/MaxWolf-01), [Luis Kalckstein](https://www.linkedin.com/in/luis-kalckstein/), [Lilia Gerber](https://www.linkedin.com/in/lilia-gerber-005370202/), [Dominik Fluch](https://www.linkedin.com/in/dominik-fluch-895993205/),  [Tobias Lendl](https://www.linkedin.com/in/tobias-lendl/)
+
 ## Setup
 
 ```bash
